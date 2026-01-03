@@ -84,7 +84,7 @@ export const AuthManager: React.FC = () => {
                         </filter>
                     </defs>
                 </svg>
-                <h1 className="text-4xl font-bold text-slate-100 tracking-wider">Kairon AI</h1>
+                <h1 className="text-4xl font-bold text-slate-100 tracking-wider">Blurchats</h1>
             </div>
             {renderView()}
         </div>

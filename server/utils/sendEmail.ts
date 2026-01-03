@@ -16,7 +16,7 @@ const sendEmail = async (options: EmailOptions) => {
   });
 
   const mailOptions = {
-    from: `Kairon AI <${process.env.EMAIL_USER}>`,
+    from: `Blurchats <${process.env.EMAIL_USER}>`,
     to: options.email,
     subject: options.subject,
     html: options.message,

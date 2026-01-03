@@ -22,7 +22,7 @@ export const submitFeedback = async (req: Request, res: Response) => {
         // Construct the email content
         const emailContent = `
             <div style="font-family: sans-serif; color: #333;">
-                <h2 style="color: #ef4444;">Kairon AI Feedback</h2>
+                <h2 style="color: #ef4444;">Blurchats Feedback</h2>
                 <p><strong>User:</strong> ${req.user.name} (${req.user.email})</p>
                 <p><strong>User ID:</strong> ${req.user._id}</p>
                 <hr />

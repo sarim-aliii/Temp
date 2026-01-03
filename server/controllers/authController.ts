@@ -6,7 +6,6 @@ import crypto from 'crypto';
 import User from '../models/User';
 import { firebaseAdmin } from '../config/firebaseAdmin';
 import sendEmail from '../utils/sendEmail';
-import StudyProject from '../models/StudyProject';
 
 
 // Helper: Generate JWT
@@ -40,7 +39,8 @@ export const registerUser = asyncHandler(async (req: Request, res: Response) => 
     name: email.split('@')[0],
     authMethod: 'email',
     verificationToken: verificationTokenHash,
-    isVerified: false
+    isVerified: false,
+    avatar: 'https://picsum.photos/200' // Default avatar if not set in model default
   });
 
   if (user) {
@@ -48,7 +48,7 @@ export const registerUser = asyncHandler(async (req: Request, res: Response) => 
     const message = `
       <div style="font-family: Arial, sans-serif; padding: 20px;">
         <h2>Verify Your Email</h2>
-        <p>Thanks for signing up for Kairon AI!</p>
+        <p>Thanks for signing up for BlurChats!</p>
         <p>Please use the following OTP to verify your account:</p>
         
         <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
@@ -63,7 +63,7 @@ export const registerUser = asyncHandler(async (req: Request, res: Response) => 
     try {
       await sendEmail({
         email: user.email,
-        subject: 'Kairon AI - Verify Your Account',
+        subject: 'BlurChats - Verify Your Account',
         message,
       });
 
@@ -107,10 +107,6 @@ export const loginUser = asyncHandler(async (req: Request, res: Response) => {
       email: user.email,
       avatar: user.avatar,
       token: generateToken(user.id.toString()),
-      xp: user.xp,
-      level: user.level,
-      currentStreak: user.currentStreak,
-      todos: user.todos
     });
   } else {
     throw new AppError('Invalid email or password', 401);
@@ -128,41 +124,14 @@ export const getUserProfile = asyncHandler(async (req: Request, res: Response) =
       name: user.name,
       email: user.email,
       avatar: user.avatar,
-      xp: user.xp || 0,
-      level: user.level || 1,
-      currentStreak: user.currentStreak || 0,
-      dailyStats: user.dailyStats || [],
-      skillStats: user.skillStats || {},
-      todos: user.todos || []
     });
   } else {
     throw new AppError('User not found', 404);
   }
 });
 
-// @desc    Update User Todos
-// @route   PUT /api/auth/todos
-// @access  Private
-export const updateUserTodos = asyncHandler(async (req: Request, res: Response) => {
-  const { todos } = req.body;
-
-  // req.user is set by authMiddleware
-  if (!req.user) throw new AppError('Not authorized', 401);
-
-  const user = await User.findById(req.user.id);
-  if (!user) throw new AppError('User not found', 404);
-
-  user.todos = todos;
-  const updatedUser = await user.save();
-
-  res.json({
-    message: 'Todos updated',
-    todos: updatedUser.todos
-  });
-});
-
 // Helper for Social Login
-const socialLoginHandler = async (req: Request, res: Response, provider: 'google' | 'github') => {
+const socialLoginHandler = async (req: Request, res: Response, provider: 'google') => {
   const { idToken } = req.body;
 
   try {
@@ -201,10 +170,6 @@ const socialLoginHandler = async (req: Request, res: Response, provider: 'google
       email: user.email,
       avatar: user.avatar,
       token: generateToken(user.id.toString()),
-      xp: user.xp,
-      level: user.level,
-      currentStreak: user.currentStreak,
-      todos: user.todos
     });
 
   } catch (error: any) {
@@ -220,13 +185,6 @@ const socialLoginHandler = async (req: Request, res: Response, provider: 'google
 // @access  Public
 export const googleLogin = asyncHandler(async (req: Request, res: Response) => {
   await socialLoginHandler(req, res, 'google');
-});
-
-// @desc    Auth user with GitHub
-// @route   POST /api/auth/github
-// @access  Public
-export const githubLogin = asyncHandler(async (req: Request, res: Response) => {
-  await socialLoginHandler(req, res, 'github');
 });
 
 // @desc    Update user profile
@@ -283,10 +241,6 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
     email: user.email,
     avatar: user.avatar,
     token: generateToken(user.id.toString()),
-    xp: user.xp,
-    level: user.level,
-    currentStreak: user.currentStreak,
-    todos: user.todos
   });
 });
 
@@ -319,7 +273,7 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
   const message = `
     <div style="font-family: Arial, sans-serif; padding: 20px;">
       <h2>Reset Your Password</h2>
-      <p>You requested a password reset for your Kairon AI account.</p>
+      <p>You requested a password reset for your BlurChats account.</p>
       <p>Please use the following code to reset your password:</p>
       
       <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
@@ -334,7 +288,7 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
   try {
     await sendEmail({
       email: user.email,
-      subject: 'Kairon AI - Password Reset Code',
+      subject: 'BlurChats - Password Reset Code',
       message,
     });
 
@@ -377,103 +331,6 @@ export const resetPassword = asyncHandler(async (req: Request, res: Response) =>
   res.status(200).json({ message: "Password updated successfully" });
 });
 
-// @desc    Update User Progress (XP, Streak, & Stats)
-// @route   PUT /api/auth/progress
-// @access  Private
-export const updateUserProgress = asyncHandler(async (req: Request, res: Response) => {
-  const { xpGained, category, timezoneOffset } = req.body; //
-
-  if (!req.user) throw new AppError('Not authorized', 401);
-
-  const user = await User.findById(req.user.id);
-  if (!user) throw new AppError('User not found', 404);
-
-  // --- STREAK LOGIC START ---
-  
-  // Helper: Normalize a date to User's Local Midnight (represented in UTC)
-  const getUserMidnight = (date: Date, offsetMinutes: number) => {
-    if (!date) return null;
-    // Adjust UTC time by the offset to get "Local Time"
-    // offsetMinutes is positive for West (behind UTC) and negative for East (ahead UTC).
-    // JS Date logic: Local = UTC - offset.
-    // So we subtract the offset to shift the timestamp to "User's Local Time".
-    const localTime = new Date(date.getTime() - (offsetMinutes * 60 * 1000));
-    
-    // Set to midnight (00:00:00)
-    localTime.setUTCHours(0, 0, 0, 0);
-    return localTime;
-  };
-
-  // Use provided offset or default to 0 (UTC)
-  const offset = typeof timezoneOffset === 'number' ? timezoneOffset : 0;
-
-  const today = new Date();
-  const todayMidnight = getUserMidnight(today, offset);
-
-  // Normalize the stored Last Study Date using the SAME offset
-  const lastStudy = user.lastStudyDate ? new Date(user.lastStudyDate) : null;
-  const lastStudyMidnight = lastStudy ? getUserMidnight(lastStudy, offset) : null;
-
-  if (!lastStudyMidnight || !todayMidnight) {
-    user.currentStreak = 1;
-  } else if (lastStudyMidnight.getTime() !== todayMidnight.getTime()) {
-    // Calculate difference in days between the two Midnights
-    const diffTime = Math.abs(todayMidnight.getTime() - lastStudyMidnight.getTime());
-    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)); // Use round for safety
-
-    if (diffDays === 1) {
-      // Exactly 1 day difference (Consecutive)
-      user.currentStreak = (user.currentStreak || 0) + 1;
-    } else {
-      // More than 1 day difference (Missed a day)
-      user.currentStreak = 1;
-    }
-  }
-  // If dates are equal (Same Day), do nothing to streak.
-
-  user.lastStudyDate = new Date(); // Save current server time for next reference
-  // --- STREAK LOGIC END ---
-
-  // XP & Level Logic (Existing Code)
-  user.xp = (user.xp || 0) + xpGained;
-  user.level = Math.floor(user.xp / 100) + 1;
-
-  // Analytics Logic (Existing Code)
-  // Use the Local Date String for stats so the graph matches user's timezone
-  const dateString = new Date(today.getTime() - (offset * 60 * 1000)).toISOString().split('T')[0];
-
-  if (!user.dailyStats) user.dailyStats = [];
-  const todayStatIndex = user.dailyStats.findIndex(s => s.date === dateString);
-  if (todayStatIndex >= 0) {
-    user.dailyStats[todayStatIndex].xp += xpGained;
-  } else {
-    if (user.dailyStats.length > 30) user.dailyStats.shift();
-    user.dailyStats.push({ date: dateString, xp: xpGained });
-  }
-
-  if (category) {
-    if (!user.skillStats) user.skillStats = new Map();
-    const currentSkillXp = user.skillStats.get(category) || 0;
-    user.skillStats.set(category, currentSkillXp + xpGained);
-  }
-
-  const updatedUser = await user.save();
-
-  res.json({
-    _id: updatedUser._id,
-    name: updatedUser.name,
-    email: updatedUser.email,
-    avatar: updatedUser.avatar,
-    xp: updatedUser.xp,
-    level: updatedUser.level,
-    currentStreak: updatedUser.currentStreak,
-    dailyStats: updatedUser.dailyStats,
-    skillStats: updatedUser.skillStats,
-    todos: updatedUser.todos
-  });
-});
-
-
 // @desc    Resend Verification Email
 // @route   POST /api/auth/resend-verification
 // @access  Public
@@ -502,7 +359,7 @@ export const resendVerificationEmail = asyncHandler(async (req: Request, res: Re
   const message = `
     <div style="font-family: Arial, sans-serif; padding: 20px;">
       <h2>Verify Your Email</h2>
-      <p>You requested a new verification code for Kairon AI.</p>
+      <p>You requested a new verification code for BlurChats.</p>
       <p>Please use the following OTP to verify your account:</p>
       
       <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
@@ -516,31 +373,9 @@ export const resendVerificationEmail = asyncHandler(async (req: Request, res: Re
 
   await sendEmail({
     email: user.email,
-    subject: 'Kairon AI - New Verification Code',
+    subject: 'BlurChats - New Verification Code',
     message,
   });
 
   res.status(200).json({ message: "Verification code sent" });
-});
-
-
-// @desc    Export all user data
-// @route   GET /api/auth/export
-// @access  Private
-export const exportUserData = asyncHandler(async (req: Request, res: Response) => {
-    if (!req.user) throw new AppError('Not authorized', 401);
-
-    const user = await User.findById(req.user.id).select('-password');
-    if (!user) throw new AppError('User not found', 404);
-
-    const projects = await StudyProject.find({ owner: req.user.id });
-
-    const exportData = {
-        user,
-        projects,
-        exportDate: new Date().toISOString(),
-        version: '1.0'
-    };
-
-    res.json(exportData);
 });
