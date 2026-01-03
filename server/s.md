@@ -110,7 +110,7 @@ If you need always-on (no spin-down), upgrade to **Starter Plan ($7/month)**:
 
 ### Server Won't Start
 - Check environment variables are all set
-- Verify `MONGO_URI` is correct and accessible
+- Verify `_URI` is correct and accessible
 - Check logs for specific error messages
 
 ### Database Connection Issues

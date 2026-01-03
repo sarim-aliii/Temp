@@ -7,6 +7,8 @@ import { ViewState, Message, User } from './types';
 import { authApi, pairingApi } from './services/api';
 import { connectSocket, getSocket } from './services/socket';
 
+
+
 // --- COMPONENT: Auth Modal ---
 const AuthModal = ({ onLogin }: { onLogin: (token: string, user: User) => void }) => {
   const [email, setEmail] = useState('');

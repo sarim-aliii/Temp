@@ -1,3 +1,13 @@
+export interface LoginCredentials {
+    email: string;
+    password: string;
+}
+
+export interface SignupCredentials {
+    email: string;
+    password: string;
+}
+
 export interface User {
   id: string;
   name?: string; 
@@ -35,4 +45,12 @@ export enum ViewState {
 export interface ChatSession {
   recipientId: string;
   messages: Message[];
+}
+
+export type NotificationType = 'error' | 'success' | 'info';
+
+export interface Notification {
+  id: number;
+  message: string;
+  type: NotificationType;
 }

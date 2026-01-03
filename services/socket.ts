@@ -5,9 +5,11 @@ let socket: Socket | null = null;
 export const connectSocket = (token: string) => {
   if (socket) return socket;
 
-  // Connect to backend port 8080
-  socket = io('http://localhost:8080', {
-    auth: { token }, // Backend expects this in handleShake.auth
+  // FIX: Use environment variable, fallback to localhost only if missing
+  const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:8080';
+
+  socket = io(SOCKET_URL, {
+    auth: { token }, 
     transports: ['websocket'],
   });
 
