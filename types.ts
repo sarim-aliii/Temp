@@ -9,7 +9,8 @@ export interface SignupCredentials {
 }
 
 export interface User {
-  id: string;
+  id?: string;
+  _id?: string;
   name?: string; 
   email: string;
   avatar?: string;
