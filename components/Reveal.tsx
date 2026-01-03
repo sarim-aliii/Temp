@@ -1,0 +1,47 @@
+import React, { useRef, useEffect, useState, ReactNode } from 'react';
+
+interface RevealProps {
+  children: ReactNode;
+  width?: 'fit-content' | '100%';
+  delay?: number;
+  className?: string;
+}
+
+export const Reveal: React.FC<RevealProps> = ({ children, width = '100%', delay = 0, className = '' }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect(); // Only animate once
+        }
+      },
+      { threshold: 0.15 }
+    );
+
+    if (ref.current) {
+      observer.observe(ref.current);
+    }
+
+    return () => {
+      if (ref.current) observer.unobserve(ref.current);
+    };
+  }, []);
+
+  return (
+    <div ref={ref} style={{ width }} className={`relative overflow-hidden ${className}`}>
+      <div
+        style={{
+          transform: isVisible ? 'translateY(0)' : 'translateY(75px)',
+          opacity: isVisible ? 1 : 0,
+          transition: `all 0.9s cubic-bezier(0.16, 1, 0.3, 1) ${delay}s`,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+};
