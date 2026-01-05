@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import passport from 'passport';
 import { configurePassport } from './config/passport';
 import { createServer } from 'http';
@@ -17,9 +18,8 @@ import {
   AuthenticatedSocket,
 } from './types';
 import jwt from 'jsonwebtoken';
-import User, { IUser } from './models/User';
-import JournalEntry, { IJournalEntry } from './models/JournalEntry';
-import mongoose from 'mongoose';
+import User from './models/User';
+import JournalEntry from './models/JournalEntry';
 import Logger from './utils/logger';
 import { getRoomId } from './utils/roomUtils';
 
@@ -32,6 +32,11 @@ connectDB();
 const app = express();
 
 // --- Middleware ---
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+}));
 app.use(express.json());
 app.use(passport.initialize());
 configurePassport(passport);

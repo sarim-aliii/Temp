@@ -8,7 +8,7 @@ import {
 import useLocalStorage from '../hooks/useLocalStorage';
 import * as api from '../services/api';
 import { auth } from '../firebase';
-import { GoogleAuthProvider, GithubAuthProvider, signInWithPopup } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 
 
 interface AppContextType {
@@ -27,8 +27,6 @@ interface AppContextType {
 
 
     // UI State
-    isSidebarCollapsed: boolean;
-    toggleSidebar: () => void;
     theme: 'dark' | 'light';
     toggleTheme: () => void;
 

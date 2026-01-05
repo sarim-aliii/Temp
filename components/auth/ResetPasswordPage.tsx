@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
 import { useApi } from '../../hooks/useApi';
 import { Button } from '../ui/Button';
-import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Loader } from '../ui/Loader';
+import { LockKeyhole, ShieldCheck, AlertCircle, ArrowLeft, Terminal } from 'lucide-react';
 
 interface ResetPasswordPageProps {
   token: string;
@@ -18,25 +18,23 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({ token, onS
   const [confirmPassword, setConfirmPassword] = useState('');
   const [validationErrors, setValidationErrors] = useState<{ [key: string]: string }>({});
 
-  // 2. Setup Hook
-  // Wraps the context function. Auto-toasts on success/error.
   const { 
     execute: executeReset, 
     loading: isLoading, 
     error: apiError 
-  } = useApi(resetPassword, "Password has been reset successfully!");
+  } = useApi(resetPassword, "Credentials updated successfully.");
 
   const validate = () => {
     const newErrors: { [key: string]: string } = {};
     if (!newPassword) {
-      newErrors.newPassword = 'New password is required.';
+      newErrors.newPassword = 'New key required.';
     } else if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/.test(newPassword)) {
-      newErrors.newPassword = 'Password must be 8+ characters and include an uppercase, lowercase, number, and special character.';
+      newErrors.newPassword = 'Security weak: Req 8+ chars, Upper, Lower, Num, Special.';
     }
     if (!confirmPassword) {
-      newErrors.confirmPassword = 'Confirming password is required.';
+      newErrors.confirmPassword = 'Verification required.';
     } else if (newPassword !== confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match.';
+      newErrors.confirmPassword = 'Key mismatch.';
     }
     
     setValidationErrors(newErrors);
@@ -45,65 +43,136 @@ export const ResetPasswordPage: React.FC<ResetPasswordPageProps> = ({ token, onS
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setValidationErrors({}); // Clear local errors on new submit attempt
+    setValidationErrors({});
     
     if (!validate()) return;
     
     if (!token.trim()) {
-        setValidationErrors({ form: "Reset token is missing or invalid."});
+        setValidationErrors({ form: "ERR_INVALID_TOKEN: MISSING"});
         return;
     }
 
     try {
-      // 3. Execute Hook
       await executeReset(token, newPassword);
       onSuccess();
     } catch (error) {
-      // Hook handles the toast. 
-      // We don't need to do anything here unless we want specific side effects.
+      // Hook handles the toast/error state
     }
   };
 
   return (
-    <Card title="Set New Password" className="w-full max-w-md fade-in">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input
-          id="new-password"
-          label="New Password"
-          type="password"
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          error={validationErrors.newPassword}
-          disabled={isLoading}
-        />
-        <Input
-          id="confirm-new-password"
-          label="Confirm New Password"
-          type="password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          error={validationErrors.confirmPassword}
-          disabled={isLoading}
-        />
-        
-        {/* Show either local validation form error OR API error */}
-        {(validationErrors.form || apiError) && (
-            <p className="text-sm text-red-400 -mb-2">
-                {validationErrors.form || apiError}
-            </p>
-        )}
+    <div className="relative min-h-screen w-full flex flex-col items-center justify-center bg-black text-white selection:bg-red-500/30 selection:text-red-200 overflow-hidden">
 
-        <div className="pt-2">
-            <Button type="submit" disabled={isLoading} className="w-full flex items-center justify-center">
-                {isLoading ? <Loader spinnerClassName="w-5 h-5" /> : 'Reset Password'}
-            </Button>
+      {/* 1. Global Noise Texture */}
+      <div className="fixed inset-0 z-[1] opacity-[0.04] pointer-events-none mix-blend-overlay"
+           style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E")` }}>
+      </div>
+
+      {/* 2. Ambient Background */}
+      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+        <div className="absolute bottom-[-10%] left-[-10%] w-[50vw] h-[50vw] bg-zinc-800/20 blur-[120px] rounded-full animate-pulse duration-[8s]" />
+      </div>
+
+      {/* Dot Matrix Overlay */}
+      <div className="fixed inset-0 dot-matrix opacity-[0.03] z-0 pointer-events-none" />
+
+      {/* 3. Tech Navbar */}
+      <nav className="fixed top-0 w-full z-50 px-6 py-6 flex justify-between items-center mix-blend-difference text-zinc-500">
+         <button onClick={onSwitchToLogin} className="flex items-center gap-2 hover:text-white transition-colors group">
+            <ArrowLeft size={16} className="group-hover:-translate-x-1 transition-transform"/>
+            <span className="font-mono text-xs tracking-[0.2em]">ABORT</span>
+        </button>
+        <div className="flex gap-2">
+            <span className="font-mono text-[10px] hidden sm:block">SECURE_CHANNEL_ESTABLISHED</span>
+            <div className={`w-1.5 h-1.5 rounded-full ${isLoading ? 'bg-red-500 animate-ping' : 'bg-green-500'}`} />
         </div>
-      </form>
-       <p className="text-sm text-center text-slate-400 mt-6">
-          <button type="button" onClick={onSwitchToLogin} className="font-semibold text-red-400 hover:underline focus:outline-none">
-            Back to Login
-          </button>
-        </p>
-    </Card>
+      </nav>
+
+      {/* MAIN CONTAINER */}
+      <div className="relative z-10 w-full max-w-md p-6">
+        
+        {/* Aesthetic Border Container */}
+        <div className="relative group">
+            {/* Animated Glow Border */}
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-zinc-700 via-red-900 to-zinc-700 rounded-lg blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+            
+            <div className="relative bg-zinc-900/80 backdrop-blur-xl border border-white/10 p-8 rounded-lg shadow-2xl">
+                
+                {/* Header Section */}
+                <div className="mb-8 flex flex-col items-center text-center space-y-2">
+                    <div className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center border border-white/10 mb-2">
+                        <LockKeyhole size={20} className="text-white" />
+                    </div>
+                    <h2 className="text-2xl font-bold tracking-tight text-white">UPDATE CREDENTIALS</h2>
+                    <p className="text-sm text-zinc-500 font-mono tracking-wide">ENTER NEW SECURITY KEY</p>
+                </div>
+
+                {/* Form Section */}
+                <form onSubmit={handleSubmit} className="space-y-5">
+                    <div className="space-y-4">
+                        <Input
+                            id="new-password"
+                            label="New Passcode"
+                            type="password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            error={validationErrors.newPassword}
+                            disabled={isLoading}
+                            className="bg-black/50 border-white/10 focus:border-red-500/50 text-white placeholder:text-zinc-700 font-mono text-sm"
+                        />
+                        <Input
+                            id="confirm-new-password"
+                            label="Confirm Passcode"
+                            type="password"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            error={validationErrors.confirmPassword}
+                            disabled={isLoading}
+                            className="bg-black/50 border-white/10 focus:border-red-500/50 text-white placeholder:text-zinc-700 font-mono text-sm"
+                        />
+                    </div>
+                    
+                    {/* Error Display Block */}
+                    {(validationErrors.form || apiError) && (
+                         <div className="p-3 bg-red-900/20 border border-red-500/20 rounded flex items-start gap-3">
+                            <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                            <p className="text-xs text-red-200 font-mono leading-relaxed">
+                                {validationErrors.form || apiError}
+                            </p>
+                        </div>
+                    )}
+
+                    <Button 
+                        type="submit" 
+                        disabled={isLoading} 
+                        className="w-full h-12 bg-white text-black hover:bg-zinc-200 hover:scale-[1.02] active:scale-[0.98] transition-all font-mono tracking-widest text-xs font-bold rounded flex items-center justify-center gap-2 mt-4"
+                    >
+                        {isLoading ? <Loader spinnerClassName="w-4 h-4 text-black" /> : (
+                            <>
+                                <span>OVERRIDE</span>
+                                <ShieldCheck size={14} />
+                            </>
+                        )}
+                    </Button>
+                </form>
+
+                {/* Footer Link */}
+                <div className="mt-8 pt-6 border-t border-white/5 text-center">
+                    <button type="button" onClick={onSwitchToLogin} className="flex items-center justify-center gap-2 mx-auto text-xs text-zinc-500 hover:text-white transition-colors group">
+                         <Terminal size={12} />
+                         <span className="group-hover:underline underline-offset-4">Return to Terminal</span>
+                    </button>
+                </div>
+            </div>
+            
+            {/* Decorative Tech Corners */}
+            <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-white/30 rounded-tl-sm"></div>
+            <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-white/30 rounded-tr-sm"></div>
+            <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-white/30 rounded-bl-sm"></div>
+            <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-white/30 rounded-br-sm"></div>
+        </div>
+
+      </div>
+    </div>
   );
 };

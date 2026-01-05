@@ -257,7 +257,7 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
     throw new AppError("User not found", 404);
   }
 
-  if (user.authMethod === 'google' || user.authMethod === 'github') {
+  if (user.authMethod === 'google') {
     throw new AppError(`You registered with ${user.authMethod}. Please sign in with that.`, 400);
   }
 
