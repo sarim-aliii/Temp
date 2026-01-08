@@ -290,6 +290,7 @@ io.on('connection', (socket: Socket) => {
         currentState.videoSource = action.payload;
         currentState.playbackState = {
           ...getDefaultRoomState().playbackState,
+          isPlaying: true, 
           lastUpdateTimestamp: serverTime,
         };
         currentState.isScreenSharing = action.payload.type === 'screen';

@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { Reveal } from './Reveal';
+import { SyncPlayer } from './SyncPlayer';
+import { useAppContext } from '../context/AppContext';
 import { MOCK_POSTS, MOCK_USERS } from '../constants';
 import { Heart, MessageSquare, Share2, MoreHorizontal, Send, CornerDownRight, Ghost } from 'lucide-react';
+
 
 interface Comment {
   id: string;
@@ -162,7 +165,11 @@ interface FeedProps {
     onUserClick: (userId: string) => void;
 }
 
+// --- Main Feed Component ---
 export const Feed: React.FC<FeedProps> = ({ onUserClick }) => {
+  const { currentUser } = useAppContext();
+  const isPaired = !!currentUser?.pairedWithUserId;
+
   return (
     <div className="min-h-screen bg-black pt-32 pb-20 px-4 md:px-8">
       <div className="fixed inset-0 dot-matrix opacity-[0.03] pointer-events-none"></div>
@@ -171,12 +178,21 @@ export const Feed: React.FC<FeedProps> = ({ onUserClick }) => {
           <div>
             <h1 className="text-4xl font-bold tracking-tighter uppercase">Signal Feed</h1>
             <div className="flex items-center gap-2 mt-2">
-               <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-               <p className="font-mono text-[10px] text-zinc-500 tracking-[0.2em] uppercase">Status: Live Syncing</p>
+               <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${isPaired ? 'bg-green-500' : 'bg-red-500'}`}></span>
+               <p className="font-mono text-[10px] text-zinc-500 tracking-[0.2em] uppercase">
+                  Status: {isPaired ? 'Live Syncing' : 'Standalone Mode'}
+               </p>
             </div>
           </div>
         </div>
       </div>
+      
+      <div className="max-w-4xl mx-auto mb-20 relative z-20">
+         <Reveal delay={0.1}>
+            <SyncPlayer isPaired={isPaired} />
+         </Reveal>
+      </div>
+      {/* -------------------------------- */}
 
       <div className="max-w-2xl mx-auto space-y-16 relative z-10">
         {MOCK_POSTS.map((post, index) => (
