@@ -20,7 +20,6 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({ email: propEma
   const navigate = useNavigate();
   const location = useLocation();
 
-  // FIX 1: Robust email retrieval (Router State > Prop > LocalStorage)
   const email = location.state?.email || propEmail || localStorage.getItem('pendingVerificationEmail');
 
   const { 
@@ -191,12 +190,12 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({ email: propEma
 
                     {/* Resend Logic */}
                     <div className="mt-6 pt-4 border-t border-white/5 text-center">
-                         {timer > 0 ? (
+                          {timer > 0 ? (
                            <div className="flex justify-center items-center gap-2 text-zinc-500 font-mono text-[10px]">
                                <RefreshCcw size={10} className="animate-spin duration-[3000ms]" />
                                <span>RETRY IN {timer}s</span>
                            </div>
-                         ) : (
+                          ) : (
                            <button
                              onClick={handleResend}
                              disabled={isResending}
@@ -205,7 +204,7 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({ email: propEma
                              <RefreshCcw size={10} className={`group-hover:rotate-180 transition-transform duration-500 ${isResending ? 'animate-spin' : ''}`} />
                              <span>{isResending ? 'TRANSMITTING...' : 'RESEND SIGNAL'}</span>
                            </button>
-                         )}
+                          )}
                     </div>
                 </div>
             </div>

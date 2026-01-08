@@ -5,7 +5,7 @@ import {
     User,
     NotificationType
 } from '../types';
-import useLocalStorage from '../hooks/useLocalStorage'; 
+import useLocalStorage from '../hooks/useLocalStorage';
 import { authApi, userApi } from '../services/api';
 import { auth } from '../firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
@@ -19,7 +19,9 @@ interface AppContextType {
     loginWithGoogle: () => Promise<void>;
     signup: (credentials: SignupCredentials) => Promise<void>;
     logout: () => void;
-    verifyEmail: (token: string) => Promise<void>;
+    
+
+    verifyEmail: (data: { email: string; token: string }) => Promise<void>;
     requestPasswordReset: (email: string) => Promise<void>;
     resetPassword: (data: { email: string; otp: string; password: string }) => Promise<void>;
     updateUserName: (name: string) => Promise<void>;
@@ -208,20 +210,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
     };
 
-    const verifyEmail = async (otpCode: string) => {
+    const verifyEmail = async (data: { email: string; token: string }) => {
         try {
-            const response = await authApi.verifyEmail(otpCode);
-            const data = response.data || response;
+            const response = await authApi.verifyEmail(data);
+            const responseData = response.data || response;
 
-            if (data.token) {
-                handleSetToken(data.token);
+            if (responseData.token) {
+                handleSetToken(responseData.token);
             }
 
             setCurrentUser({
-                _id: data.user?._id || data.user.id,
-                name: data.user?.name,
-                email: data.user?.email,
-                avatar: data.user?.avatar,
+                _id: responseData.user?._id || responseData.user.id,
+                name: responseData.user?.name,
+                email: responseData.user?.email,
+                avatar: responseData.user?.avatar,
                 isVerified: true,
             });
             addNotification('Email verified successfully! Logging you in...', 'success');
@@ -234,7 +236,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const requestPasswordReset = async (email: string) => {
         try {
-            await authApi.forgotPassword(email);
+            await authApi.forgotPassword({ email });
             addNotification('If an account exists, a reset email has been sent.', 'success');
         } catch (error: any) {
             addNotification(error.message || 'Failed to request password reset.');

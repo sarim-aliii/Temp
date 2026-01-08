@@ -14,7 +14,7 @@ export const Dashboard: React.FC = () => {
 
   // Initialize Socket when component mounts (and user is paired)
   useEffect(() => {
-    const token = localStorage.getItem('authToken'); // Ensure this matches key in AppContext
+    const token = localStorage.getItem('token');// Ensure this matches key in AppContext
     if (token && currentUser?.pairedWithUserId) {
       connectSocket(token);
     }
@@ -30,7 +30,7 @@ export const Dashboard: React.FC = () => {
         id: Math.random().toString(),
         senderId: msg.senderId || 'partner', 
         text: msg.text || msg.content,
-        timestamp: new Date() // Ideally timestamp comes from server
+        timestamp: new Date()
       };
       setMessages(prev => [...prev, incomingMsg]);
     };
