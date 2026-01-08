@@ -20,10 +20,26 @@ const generateToken = (id: string) => {
 export const registerUser = asyncHandler(async (req: Request, res: Response) => {
   const { email, password, name } = req.body;
 
-  const userExists = await User.findOne({ email });
+  let user = await User.findOne({ email });
 
-  if (userExists) {
-    throw new AppError('An account with this email already exists.', 400);
+  if (user) {
+    if (user.isVerified) {
+      throw new AppError('An account with this email already exists.', 400);
+    }
+    // User exists but is NOT verified. We update them and resend code.
+    // Update password and name in case the user wants to change them
+    user.password = password;
+    user.name = name || user.name;
+  } else {
+    // Create new user instance (but don't save yet)
+    user = new User({
+      email,
+      password,
+      name: name || email.split('@')[0],
+      authMethod: 'email',
+      isVerified: false,
+      avatar: 'https://picsum.photos/200'
+    });
   }
 
   // 1. Generate 6-digit OTP (Plain text for email)
@@ -32,52 +48,43 @@ export const registerUser = asyncHandler(async (req: Request, res: Response) => 
   // 2. Hash the token for database storage (Security)
   const verificationTokenHash = crypto.createHash('sha256').update(verificationCode).digest('hex');
 
-  const user = await User.create({
-    email,
-    password, // Virtual field in User model will hash this to passHash
-    name: name || email.split('@')[0],
-    authMethod: 'email',
-    verificationToken: verificationTokenHash,
-    isVerified: false,
-    avatar: 'https://picsum.photos/200'
-  });
+  // 3. Update User with new token
+  user.verificationToken = verificationTokenHash;
+  await user.save();
 
-  if (user) {
-    // Send Email
-    const message = `
-      <div style="font-family: Arial, sans-serif; padding: 20px;">
-        <h2>Verify Your Email</h2>
-        <p>Thanks for signing up for BlurChats!</p>
-        <p>Please use the following OTP to verify your account:</p>
-        
-        <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
-          <h1 style="color: #333; margin: 0; letter-spacing: 5px;">${verificationCode}</h1>
-        </div>
-
-        <p>This code will expire in 10 minutes.</p>
-        <p>If you didn't request this, please ignore this email.</p>
+  // Send Email
+  const message = `
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2>Verify Your Email</h2>
+      <p>Thanks for signing up for BlurChats!</p>
+      <p>Please use the following OTP to verify your account:</p>
+      
+      <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
+        <h1 style="color: #333; margin: 0; letter-spacing: 5px;">${verificationCode}</h1>
       </div>
-    `;
 
-    try {
-      await sendEmail({
-        to: user.email,
-        subject: 'BlurChats - Verify Your Account',
-        html: message,
-      });
+      <p>This code will expire in 10 minutes.</p>
+      <p>If you didn't request this, please ignore this email.</p>
+    </div>
+  `;
 
-      res.status(201).json({
-        success: true,
-        message: 'Registration successful. Please check your email for the verification code.',
-        email: user.email
-        // NOTE: We do NOT send the token here. User must verify first.
-      });
-    } catch (emailError) {
-      console.error("Email send failed:", emailError);
-      throw new AppError('User registered, but failed to send verification email.', 500);
-    }
-  } else {
-    throw new AppError('Invalid user data', 400);
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: 'BlurChats - Verify Your Account',
+      html: message,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful. Please check your email for the verification code.',
+      email: user.email
+    });
+  } catch (emailError) {
+    console.error("Email send failed:", emailError);
+    // If it was a new user, we might want to delete them or just throw error
+    // Since we handle "stuck" users now, it's safe to just throw error
+    throw new AppError('User registered, but failed to send verification email.', 500);
   }
 });
 
@@ -113,31 +120,45 @@ export const loginUser = asyncHandler(async (req: Request, res: Response) => {
   }
 });
 
+
 // @desc    Verify User Email
 // @route   POST /api/auth/verify-email
 // @access  Public (No Token Required)
 export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
-  const { email, token } = req.body; // User provides Email AND Code
+  const { email, token } = req.body;
 
   if (!email || !token) {
     throw new AppError('Please provide both email and verification code.', 400);
   }
 
-  // Hash the incoming code to compare with DB
-  const verificationTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const cleanEmail = String(email).toLowerCase().trim();
+  const cleanToken = String(token).replace(/\s+/g, '');
 
-  // Find user by email AND matching hash
-  const user = await User.findOne({
-    email: email.toLowerCase(),
-    verificationToken: verificationTokenHash
-  });
+  // FIX: Added .select('+verificationToken') so we can actually check it!
+  const user = await User.findOne({ email: cleanEmail }).select('+verificationToken');
 
   if (!user) {
     throw new AppError('Invalid verification code or email.', 400);
   }
 
+  // Check if already verified
+  if (user.isVerified) {
+    return res.status(200).json({
+      message: "Email is already verified. Please login.",
+      isVerified: true
+    });
+  }
+
+  // Verify Token
+  const verificationTokenHash = crypto.createHash('sha256').update(cleanToken).digest('hex');
+
+  // Now user.verificationToken will be defined, and this check will work
+  if (user.verificationToken !== verificationTokenHash) {
+    throw new AppError('Invalid verification code.', 400);
+  }
+
   user.isVerified = true;
-  user.verificationToken = undefined; // Clear the token
+  user.verificationToken = undefined; 
   await user.save();
 
   res.status(200).json({
@@ -146,9 +167,10 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
     name: user.name,
     email: user.email,
     avatar: user.avatar,
-    token: generateToken(user.id.toString()), // Log the user in immediately
+    token: generateToken(user.id.toString()),
   });
 });
+
 
 // @desc    Get user profile
 // @route   GET /api/auth/me
@@ -229,6 +251,8 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
   const user = await User.findOne({ email: cleanEmail });
 
   if (!user) {
+    // Security Best Practice: Don't reveal if user exists.
+    // However, for this implementation we follow your existing flow.
     throw new AppError("User not found", 404);
   }
 

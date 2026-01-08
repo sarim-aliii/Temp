@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useApi } from '../../hooks/useApi';
 import { Button } from '../ui/Button';
 import OtpInput from '../ui/OtpInput';
@@ -7,17 +8,20 @@ import { authApi } from '../../services/api';
 import { ShieldCheck, Radio, RefreshCcw, Wifi, AlertTriangle } from 'lucide-react';
 
 interface VerifyEmailPageProps {
-  email: string;
-  onSuccess: () => void;
+  email?: string;
+  onSuccess?: () => void;
 }
 
 export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({ email: propEmail, onSuccess }) => {
   const [token, setToken] = useState('');
   const [timer, setTimer] = useState(60);
   const [successMsg, setSuccessMsg] = useState('');
+  
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  // --- FIX: Retrieve email from LocalStorage if prop is missing (handles refresh) ---
-  const email = localStorage.getItem('pendingVerificationEmail') || propEmail;
+  // FIX 1: Robust email retrieval (Router State > Prop > LocalStorage)
+  const email = location.state?.email || propEmail || localStorage.getItem('pendingVerificationEmail');
 
   const { 
     execute: verify, 
@@ -42,26 +46,36 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({ email: propEma
 
   const handleVerification = async (code: string) => {
     setSuccessMsg('');
-    if (!code || code.length < 6) return;
+    if (!code || code.length < 6 || isLoading) return;
+    
     if (!email) {
-        // Fallback if no email is found anywhere
-        alert("Identity lost. Redirecting to initialization.");
-        window.location.href = '/'; 
-        return;
+       alert("Identity lost. Redirecting to initialization.");
+       window.location.href = '/#/signup'; 
+       return;
     }
 
     try {
-      // --- FIX: Send OBJECT with email AND token ---
-      // Note: This assumes useApi passes arguments to authApi.verifyEmail
-      // You may need to update api.ts to accept { email, token } if it doesn't already.
-      await verify({ email, token: code });
+      const response = await verify({ email, token: code });
       
-      // Clean up storage on success
-      localStorage.removeItem('pendingVerificationEmail');
-      
-      onSuccess();
+      if (response) {
+        setSuccessMsg('IDENTITY_CONFIRMED. INITIALIZING UPLINK...');
+        localStorage.removeItem('pendingVerificationEmail');
+
+        if (response.token) {
+            localStorage.setItem('token', response.token);
+        }
+
+        if (onSuccess) {
+            onSuccess();
+        } else {
+            setTimeout(() => {
+                window.location.href = '/#/dashboard';
+                window.location.reload(); 
+            }, 800);
+        }
+      }
     } catch (err) {
-      // Error handled by hook
+      console.error("Verification failed", err);
     }
   };
 
@@ -69,7 +83,7 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({ email: propEma
     if (!email) return;
     setSuccessMsg('');
     try {
-      await resend({ email }); // Ensure resend also sends email object
+      await resend({ email });
       setSuccessMsg('SIGNAL_REFRESHED: CHECK_INBOX');
       setTimer(60); 
     } catch (err) {
@@ -83,7 +97,14 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({ email: propEma
   };
 
   if (!email) {
-      return <div className="h-screen w-full flex items-center justify-center bg-black text-white font-mono">NO IDENTITY FOUND. RESTARTING...</div>;
+      return (
+        <div className="h-screen w-full flex flex-col items-center justify-center bg-black text-white font-mono gap-4">
+            <div className="text-red-500 animate-pulse">NO IDENTITY FOUND</div>
+            <Button onClick={() => navigate('/signup')} variant="outline" className="border-white/20 text-white">
+                RETURN TO INITIALIZATION
+            </Button>
+        </div>
+      );
   }
 
   return (
@@ -130,6 +151,8 @@ export const VerifyEmailPage: React.FC<VerifyEmailPageProps> = ({ email: propEma
                         <div className="flex justify-center w-full py-2">
                             <OtpInput 
                                 length={6} 
+                                value={token} // Pass controlled value
+                                onChange={setToken} // Allow manual typing updates
                                 onComplete={(code) => {
                                     setToken(code);
                                     handleVerification(code);
