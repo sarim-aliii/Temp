@@ -26,16 +26,6 @@ export interface ChatRecipient {
   email: string;
 }
 
-export interface Post {
-  id: string;
-  userId: string;
-  content: string;
-  image?: string;
-  likes: number;
-  timestamp: string;
-  type: 'moment' | 'thought' | 'memory';
-}
-
 export interface Message {
   id: string;
   senderId: string;

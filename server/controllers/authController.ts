@@ -29,7 +29,7 @@ const generateAndSendOTP = async (
 
   if (type === 'verification') {
     user.verificationToken = hash;
-    // user.verificationCodeExpires = expires; // If you add this field to schema later
+    // user.verificationCodeExpires = expires;
   } else {
     user.resetPasswordToken = hash;
     user.resetPasswordExpire = expires;
@@ -364,7 +364,6 @@ const socialLoginHandler = async (req: Request, res: Response, provider: 'google
 
   } catch (error: any) {
     console.error(`${provider} Auth Error:`, error);
-    // If it's already an AppError, rethrow it
     if (error instanceof AppError) throw error;
     throw new AppError(`${provider} Sign-In failed. Invalid token.`, 401);
   }

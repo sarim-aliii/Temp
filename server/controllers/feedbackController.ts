@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import sendEmail from '../utils/sendEmail';
+import { sendEmail } from '../utils/emailService';
 
 
 // @desc    Submit feedback
@@ -19,7 +19,6 @@ export const submitFeedback = async (req: Request, res: Response) => {
     }
 
     try {
-        // Construct the email content
         const emailContent = `
             <div style="font-family: sans-serif; color: #333;">
                 <h2 style="color: #ef4444;">Blurchats Feedback</h2>
@@ -34,11 +33,10 @@ export const submitFeedback = async (req: Request, res: Response) => {
             </div>
         `;
 
-        // Send email to the admin (using the same email configured for sending)
         await sendEmail({
-            email: process.env.EMAIL_USER || '', 
+            to: process.env.EMAIL_USER || '',
             subject: `[Feedback] ${type} - ${req.user.name}`,
-            message: emailContent
+            html: emailContent
         });
 
         res.status(200).json({ message: 'Feedback sent successfully' });

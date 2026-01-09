@@ -1,6 +1,5 @@
 import { RoomState } from '../types';
 
-// The single source of truth for room data
 export const roomState: Record<string, RoomState> = {};
 export const roomTimers: Record<string, NodeJS.Timeout> = {};
 

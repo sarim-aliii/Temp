@@ -52,7 +52,6 @@ export const handleClientAction = async (
       if (currentState.messages.length > 50) currentState.messages.shift();
       currentState.messages.push(action.payload);
       io.to(rid).emit('newChatMessage', action.payload);
-      // We return here because we already emitted the specific event
       roomState[rid] = currentState;
       return;
 

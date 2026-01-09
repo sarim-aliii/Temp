@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from 'express';
 import User, { IUser } from '../models/User';
 import Logger from '../utils/logger';
 
+
 declare global {
   namespace Express {
     interface User extends IUser {}
@@ -38,7 +39,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
       return res.status(401).json({ message: 'User not found, token invalid' });
     }
     
-    req.user = user; // Attach the full user document (minus hash)
+    req.user = user;
     next();
   } catch (err) {
     if (err instanceof jwt.TokenExpiredError) {

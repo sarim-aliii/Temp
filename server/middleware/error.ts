@@ -8,10 +8,7 @@ export const errorHandler = (
   res: Response, 
   next: NextFunction
 ) => {
-  // Log error for debugging (you might want to use a logger like Winston here later)
   console.error(`[Error] ${req.method} ${req.path}:`, err);
-
-  // Default error state
   let statusCode = 500;
   let message = 'Internal Server Error';
   let errors = undefined;
@@ -26,7 +23,6 @@ export const errorHandler = (
   else if (err.name === 'ValidationError') {
     statusCode = 400;
     message = 'Validation Error';
-    // Format mongoose errors into a simple object/array
     errors = Object.values(err.errors).map((val: any) => val.message);
   } 
   else if (err.code === 11000) {
@@ -41,9 +37,8 @@ export const errorHandler = (
   // 3. Send Response in the format React expects
   res.status(statusCode).json({
     success: false,
-    message: message, // Frontend hooks look for this
-    errors: errors,   // Frontend hooks look for this
-    // Only show stack trace in development
+    message: message,
+    errors: errors,
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 };

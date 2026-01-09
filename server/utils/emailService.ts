@@ -15,7 +15,6 @@ const getTransporter = (): nodemailer.Transporter | null => {
     return null;
   }
 
-  // Gmail Configuration
   transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -33,6 +32,33 @@ export interface EmailOptions {
   html: string;
   text?: string;
 }
+
+export const getWaitlistConfirmationEmail = (email: string, position: number): EmailOptions => {
+  return {
+    to: email,
+    subject: "You're on the list! 🚀",
+    html: `
+      <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background-color: #ef4444; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h1 style="color: white; margin: 0; font-size: 24px;">BlurChat</h1>
+        </div>
+        <div style="background-color: #ffffff; padding: 20px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+          <h2 style="color: #1f2937; margin-top: 0;">You are confirmed!</h2>
+          <p style="font-size: 16px; line-height: 1.5;">Hi there,</p>
+          <p style="font-size: 16px; line-height: 1.5;">Thanks for joining the BlurChat waitlist. We are working hard to get you access.</p>
+          
+          <div style="background-color: #f3f4f6; padding: 15px; border-radius: 6px; text-align: center; margin: 20px 0;">
+            <p style="margin: 0; font-size: 14px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em;">Current Position</p>
+            <p style="margin: 5px 0 0 0; font-size: 32px; font-weight: bold; color: #ef4444;">#${position}</p>
+          </div>
+
+          <p style="font-size: 14px; color: #6b7280; margin-top: 30px;">We'll email you again when your spot is ready.</p>
+        </div>
+      </div>
+    `,
+  };
+};
+
 
 export const sendEmail = async (options: EmailOptions): Promise<boolean> => {
   const emailTransporter = getTransporter();

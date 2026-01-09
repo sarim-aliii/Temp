@@ -1,11 +1,13 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+
 export interface IWaitlist extends Document {
   email: string;
   position: number;
-  notified?: boolean;
+  notified: boolean;
   notifiedAt?: Date;
-  registeredAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const WaitlistSchema: Schema = new Schema(
@@ -39,4 +41,3 @@ WaitlistSchema.index({ email: 1 });
 WaitlistSchema.index({ position: 1 });
 
 export default mongoose.model<IWaitlist>('Waitlist', WaitlistSchema);
-

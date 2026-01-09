@@ -1,4 +1,3 @@
-// context/AppContext.tsx
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -12,6 +11,7 @@ import { authApi, userApi } from '../services/api';
 import { auth } from '../firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { disconnectSocket } from '../services/socket';
+
 
 interface AppContextType {
     // Auth
@@ -133,8 +133,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const logout = useCallback(() => {
         handleSetToken(null);
         setCurrentUser(null);
-        disconnectSocket(); // Clean up socket connection
-        navigate('/login'); // Soft navigation
+        disconnectSocket();
+        navigate('/login');
     }, [navigate]);
 
     // --- INIT AUTH ---
