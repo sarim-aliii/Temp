@@ -4,7 +4,7 @@ import { Navbar } from './Navbar';
 import { Feed } from './Feed';
 import { Chat } from './Chat';
 import { PairingView } from './PairingView';
-import { ViewState, Message, ChatRecipient } from '../types';
+import { ViewState, Message } from '../types';
 import { connectSocket, getSocket } from '../services/socket';
 
 export const Dashboard: React.FC = () => {
@@ -30,6 +30,8 @@ export const Dashboard: React.FC = () => {
            const history = data.initialState.messages.map((msg: any) => ({
               id: msg.id || crypto.randomUUID(),
               text: msg.text || msg.content,
+              audio: msg.audio,
+              type: msg.type || 'text',
               senderId: msg.senderId,
               timestamp: new Date(msg.timestamp)
            }));
@@ -54,6 +56,8 @@ export const Dashboard: React.FC = () => {
           id: msg.id || crypto.randomUUID(),
           senderId: msg.senderId || 'partner', 
           text: msg.text || msg.content,
+          audio: msg.audio,
+          type: msg.type || 'text',
           timestamp: new Date(msg.timestamp || Date.now())
         };
         setMessages(prev => [...prev, incomingMsg]);
@@ -71,7 +75,7 @@ export const Dashboard: React.FC = () => {
     }
   }, [currentUser?.pairedWithUserId]);
 
-  const handleSendMessage = (text: string) => {
+  const handleSendMessage = (content: string, type: 'text' | 'audio' = 'text') => {
     const socket = getSocket();
     if (socket && currentUser) {
       const tempId = crypto.randomUUID();
@@ -79,7 +83,9 @@ export const Dashboard: React.FC = () => {
         type: 'SEND_MESSAGE',
         payload: {
           id: tempId,
-          text,
+          text: type === 'text' ? content : 'Voice Message',
+          audio: type === 'audio' ? content : undefined,
+          type,
           senderId: currentUser._id,
           timestamp: Date.now()
         }

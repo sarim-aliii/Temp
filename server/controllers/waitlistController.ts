@@ -6,6 +6,8 @@ import {
   getAccessGrantedEmail
 } from '../utils/emailService';
 import Logger from '../utils/logger';
+import { waitlistSchema } from '../validators';
+
 
 
 // @desc    Register email for waitlist
@@ -13,23 +15,14 @@ import Logger from '../utils/logger';
 // @access  Public
 export const registerWaitlist = async (req: Request, res: Response) => {
   try {
-    const { email } = req.body;
-
-    if (!email) {
-      res.status(400).json({ success: false, message: 'Email is required' });
-      return;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      res.status(400).json({ success: false, message: 'Please provide a valid email address' });
-      return;
-    }
-
+    // 1. Validation via Zod
+    const { email } = await waitlistSchema.parseAsync(req.body);
+    
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Check existing
+    // 2. Check for existing entry
     const existingEntry = await Waitlist.findOne({ email: normalizedEmail });
+
     if (existingEntry) {
       res.status(200).json({
         success: true,
@@ -40,7 +33,7 @@ export const registerWaitlist = async (req: Request, res: Response) => {
       return;
     }
 
-    // Create new
+    // 3. Create new entry
     const totalCount = await Waitlist.countDocuments();
     const position = totalCount + 1;
 
@@ -52,7 +45,7 @@ export const registerWaitlist = async (req: Request, res: Response) => {
     await newEntry.save();
     Logger.info(`New waitlist registration: ${normalizedEmail} (Position: ${position})`);
 
-    // Send email (async)
+    // 4. Send email (async)
     sendEmail(getWaitlistConfirmationEmail(normalizedEmail, position))
       .then((success) => {
         if (success) {
@@ -71,7 +64,18 @@ export const registerWaitlist = async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
+    // Handle Zod Validation Errors
+    if (error.name === 'ZodError') {
+       res.status(400).json({ 
+         success: false, 
+         message: error.errors[0]?.message || 'Invalid input data' 
+       });
+       return;
+    }
+
     Logger.error('Waitlist registration error:', error);
+    
+    // Handle Duplicate Key Error (Race condition safety)
     if (error.code === 11000) {
       const existingEntry = await Waitlist.findOne({ email: req.body.email?.toLowerCase().trim() });
       if (existingEntry) {
@@ -84,6 +88,7 @@ export const registerWaitlist = async (req: Request, res: Response) => {
         return;
       }
     }
+
     res.status(500).json({ success: false, message: 'Server error during registration.' });
   }
 };

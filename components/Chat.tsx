@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Message, ChatRecipient } from '../types';
-import { Send, Sparkles, Mic, MicOff, Video as VideoIcon, VideoOff, PhoneOff, ShieldCheck, Image as ImageIcon } from 'lucide-react';
+import { Send, Sparkles, Mic, MicOff, Video as VideoIcon, VideoOff, PhoneOff, ShieldCheck, Image as ImageIcon, Monitor, MonitorOff } from 'lucide-react';
 import { refineMessage } from '../services/geminiService';
 import { getSocket } from '../services/socket';
 import { useAppContext } from '../context/AppContext';
@@ -31,6 +31,11 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
   const [isCallActive, setIsCallActive] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+  
+  // Screen Share State
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [isPartnerSharing, setIsPartnerSharing] = useState(false);
+  const screenTrackRef = useRef<MediaStreamTrack | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const myVideo = useRef<HTMLVideoElement>(null);
@@ -96,6 +101,9 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
             } else if (data.candidate) {
                  console.log("Received Candidate");
                  await peerRef.current.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } else if (data.type === 'screen-share-state') {
+                 // Update partner's screen share status to adjust UI (cover vs contain)
+                 setIsPartnerSharing(data.isSharing);
             }
         }
     };
@@ -163,8 +171,14 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
           stream.getTracks().forEach(track => track.stop());
           setStream(null);
       }
+      if (screenTrackRef.current) {
+          screenTrackRef.current.stop();
+          screenTrackRef.current = null;
+      }
       setPartnerStream(null);
       setIsCallActive(false);
+      setIsScreenSharing(false);
+      setIsPartnerSharing(false);
       pendingCandidates.current = []; // Clear queue on end
   };
 
@@ -181,6 +195,88 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
           const audioTrack = stream.getAudioTracks()[0];
           audioTrack.enabled = !audioTrack.enabled;
           setIsAudioEnabled(audioTrack.enabled);
+      }
+  };
+
+  // --- Screen Sharing Logic ---
+  const toggleScreenShare = async () => {
+      if (!isCallActive || !peerRef.current || !partnerSocketId) {
+          alert("Must be in an active call to share screen.");
+          return;
+      }
+
+      // STOP Sharing
+      if (isScreenSharing) {
+          stopScreenShare();
+          return;
+      }
+
+      // START Sharing
+      try {
+          // 1. Get Screen Stream
+          const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          const screenTrack = displayStream.getVideoTracks()[0];
+          screenTrackRef.current = screenTrack;
+
+          // 2. Handle User clicking "Stop Sharing" via Browser UI
+          screenTrack.onended = () => {
+              stopScreenShare();
+          };
+
+          // 3. Replace the video track in the Peer Connection
+          const sender = peerRef.current.getSenders().find((s) => s.track?.kind === 'video');
+          if (sender) {
+              await sender.replaceTrack(screenTrack);
+          }
+
+          // 4. Update Local Preview
+          if (myVideo.current) {
+              myVideo.current.srcObject = displayStream;
+          }
+
+          // 5. Signal Partner
+          setIsScreenSharing(true);
+          if (socket) {
+              socket.emit('p2pSignal', { 
+                  target: partnerSocketId, 
+                  data: { type: 'screen-share-state', isSharing: true } 
+              });
+          }
+
+      } catch (err) {
+          console.error("Failed to start screen share:", err);
+      }
+  };
+
+  const stopScreenShare = async () => {
+      // 1. Revert to Camera Track
+      if (stream && peerRef.current) {
+          const cameraTrack = stream.getVideoTracks()[0];
+          const sender = peerRef.current.getSenders().find((s) => s.track?.kind === 'video');
+          
+          if (sender) {
+              await sender.replaceTrack(cameraTrack);
+          }
+          
+          // Update Local Preview back to camera
+          if (myVideo.current) {
+              myVideo.current.srcObject = stream;
+          }
+      }
+
+      // 2. Stop the screen track explicitly
+      if (screenTrackRef.current) {
+          screenTrackRef.current.stop();
+          screenTrackRef.current = null;
+      }
+
+      // 3. Signal Partner & Update State
+      setIsScreenSharing(false);
+      if (socket && partnerSocketId) {
+          socket.emit('p2pSignal', { 
+              target: partnerSocketId, 
+              data: { type: 'screen-share-state', isSharing: false } 
+          });
       }
   };
 
@@ -208,7 +304,13 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
         <div className="w-full h-full grid grid-cols-2 gap-4">
              {/* My Video */}
              <div className="relative bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800 group">
-                <video ref={myVideo} autoPlay muted playsInline className="w-full h-full object-cover mirror-mode" />
+                <video 
+                    ref={myVideo} 
+                    autoPlay 
+                    muted 
+                    playsInline 
+                    className={`w-full h-full ${isScreenSharing ? 'object-contain bg-zinc-950' : 'object-cover mirror-mode'}`} 
+                />
                 <div className="absolute bottom-4 left-4 flex gap-2">
                     <button onClick={toggleAudio} className={`p-2 rounded-full ${isAudioEnabled ? 'bg-white/10 hover:bg-white/20' : 'bg-red-500'} backdrop-blur-md transition-colors`}>
                         {isAudioEnabled ? <Mic size={16} /> : <MicOff size={16} />}
@@ -216,21 +318,33 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
                     <button onClick={toggleVideo} className={`p-2 rounded-full ${isVideoEnabled ? 'bg-white/10 hover:bg-white/20' : 'bg-red-500'} backdrop-blur-md transition-colors`}>
                         {isVideoEnabled ? <VideoIcon size={16} /> : <VideoOff size={16} />}
                     </button>
+                    <button onClick={toggleScreenShare} className={`p-2 rounded-full ${isScreenSharing ? 'bg-green-500 text-white' : 'bg-white/10 hover:bg-white/20'} backdrop-blur-md transition-colors`}>
+                        {isScreenSharing ? <MonitorOff size={16} /> : <Monitor size={16} />}
+                    </button>
                 </div>
-                <div className="absolute top-4 left-4 bg-black/50 px-2 py-1 rounded text-[10px] font-mono uppercase text-zinc-400">You</div>
+                <div className="absolute top-4 left-4 bg-black/50 px-2 py-1 rounded text-[10px] font-mono uppercase text-zinc-400">
+                    {isScreenSharing ? 'You (Screen)' : 'You'}
+                </div>
              </div>
 
              {/* Partner Video */}
              <div className="relative bg-zinc-900 rounded-2xl overflow-hidden border border-zinc-800">
                 {partnerStream ? (
-                    <video ref={partnerVideo} autoPlay playsInline className="w-full h-full object-cover" />
+                    <video 
+                        ref={partnerVideo} 
+                        autoPlay 
+                        playsInline 
+                        className={`w-full h-full ${isPartnerSharing ? 'object-contain bg-zinc-950' : 'object-cover'}`} 
+                    />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center flex-col gap-2">
                          <div className="w-12 h-12 rounded-full border-2 border-dashed border-zinc-700 animate-spin-slow"></div>
                          <p className="font-mono text-xs text-zinc-500 uppercase">Connecting...</p>
                     </div>
                 )}
-                <div className="absolute top-4 left-4 bg-black/50 px-2 py-1 rounded text-[10px] font-mono uppercase text-zinc-400">Partner</div>
+                <div className="absolute top-4 left-4 bg-black/50 px-2 py-1 rounded text-[10px] font-mono uppercase text-zinc-400">
+                    {isPartnerSharing ? 'Partner (Screen)' : 'Partner'}
+                </div>
              </div>
         </div>
       </div>

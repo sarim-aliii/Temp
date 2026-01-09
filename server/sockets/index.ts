@@ -46,17 +46,25 @@ export const initSocketServer = (io: Server) => {
   }, SYNC_INTERVAL);
 
   // 2. Authentication Middleware
+  // SECURITY: Ensure every socket connection has a valid JWT
   io.use(async (socket: Socket, next) => {
     const token = socket.handshake.auth.token;
-    if (!token) return next(new Error('No token provided.'));
+    if (!token) {
+        Logger.warn(`[Socket Auth] Connection rejected: No token provided from ${socket.handshake.address}`);
+        return next(new Error('No token provided.'));
+    }
 
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
       const user = await User.findById(decoded.id);
-      if (!user) return next(new Error('User not found.'));
+      if (!user) {
+          Logger.warn(`[Socket Auth] Connection rejected: User not found for token ID ${decoded.id}`);
+          return next(new Error('User not found.'));
+      }
       (socket as unknown as AuthenticatedSocket).user = user;
       next();
-    } catch (err) {
+    } catch (err: any) {
+      Logger.warn(`[Socket Auth] Connection rejected: Invalid token from ${socket.handshake.address}. Error: ${err.message}`);
       next(new Error('Invalid token.'));
     }
   });

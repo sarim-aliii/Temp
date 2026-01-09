@@ -1,24 +1,17 @@
 import { Request, Response } from 'express';
 import { sendEmail } from '../utils/emailService';
+import { feedbackSchema } from '../validators';
 
 
-// @desc    Submit feedback
-// @route   POST /api/feedback
-// @access  Private
 export const submitFeedback = async (req: Request, res: Response) => {
     if (!req.user) {
          res.status(401).json({ message: 'Not authorized' });
          return;
     }
 
-    const { type, message } = req.body;
-
-    if (!message || !type) {
-        res.status(400).json({ message: 'Please provide a feedback type and message.' });
-        return;
-    }
-
     try {
+        const { type, message } = await feedbackSchema.parseAsync(req.body);
+
         const emailContent = `
             <div style="font-family: sans-serif; color: #333;">
                 <h2 style="color: #ef4444;">Blurchats Feedback</h2>
@@ -40,7 +33,11 @@ export const submitFeedback = async (req: Request, res: Response) => {
         });
 
         res.status(200).json({ message: 'Feedback sent successfully' });
-    } catch (error) {
+    } catch (error: any) {
+        if (error.name === 'ZodError') {
+             res.status(400).json({ message: error.errors[0].message });
+             return;
+        }
         console.error("Feedback Error:", error);
         res.status(500).json({ message: 'Failed to send feedback' });
     }

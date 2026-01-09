@@ -6,7 +6,16 @@ import crypto from 'crypto';
 import User, { IUser } from '../models/User';
 import { firebaseAdmin } from '../config/firebaseAdmin';
 import { sendEmail } from '../utils/emailService';
-
+import { 
+  registerSchema, 
+  loginSchema, 
+  verifyEmailSchema, 
+  resendVerificationSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  updateProfileSchema,
+  googleLoginSchema
+} from '../validators';
 
 // Helper: Generate JWT
 const generateToken = (id: string) => {
@@ -63,7 +72,9 @@ const generateAndSendOTP = async (
 // @route   POST /api/auth/signup
 // @access  Public
 export const registerUser = asyncHandler(async (req: Request, res: Response) => {
-  const { email, password, name } = req.body;
+  // Validate Input
+  const validatedData = await registerSchema.parseAsync(req.body);
+  const { email, password, name } = validatedData;
 
   let user = await User.findOne({ email });
 
@@ -109,9 +120,9 @@ export const registerUser = asyncHandler(async (req: Request, res: Response) => 
 // @route   POST /api/auth/login
 // @access  Public
 export const loginUser = asyncHandler(async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  // Validate Input
+  const { email, password } = await loginSchema.parseAsync(req.body);
 
-  // Select passHash because it is excluded by default
   const user = await User.findOne({ email }).select('+passHash');
 
   if (user && user.authMethod !== 'email') {
@@ -143,11 +154,8 @@ export const loginUser = asyncHandler(async (req: Request, res: Response) => {
 // @route   POST /api/auth/verify-email
 // @access  Public (No Token Required)
 export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
-  const { email, token } = req.body;
-
-  if (!email || !token) {
-    throw new AppError('Please provide both email and verification code.', 400);
-  }
+  // Validate Input
+  const { email, token } = await verifyEmailSchema.parseAsync(req.body);
 
   const cleanEmail = String(email).toLowerCase().trim();
   const cleanToken = String(token).replace(/\s+/g, '');
@@ -191,6 +199,7 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
 // @route   GET /api/auth/me
 // @access  Private
 export const getUserProfile = asyncHandler(async (req: Request, res: Response) => {
+  // No body validation needed for GET request
   const user = await User.findById(req.user?.id).select('-password');
   if (user) {
     res.json({
@@ -211,7 +220,8 @@ export const getUserProfile = asyncHandler(async (req: Request, res: Response) =
 // @route   POST /api/auth/resend-verification
 // @access  Public
 export const resendVerificationEmail = asyncHandler(async (req: Request, res: Response) => {
-  const { email } = req.body;
+  // Validate Input
+  const { email } = await resendVerificationSchema.parseAsync(req.body);
 
   const user = await User.findOne({ email });
 
@@ -238,7 +248,8 @@ export const resendVerificationEmail = asyncHandler(async (req: Request, res: Re
 // @route   POST /api/auth/forgot-password
 // @access  Public
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
-  const { email } = req.body;
+  // Validate Input
+  const { email } = await forgotPasswordSchema.parseAsync(req.body);
   const cleanEmail = email.toLowerCase().trim();
 
   const user = await User.findOne({ email: cleanEmail });
@@ -272,7 +283,8 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
 // @route   POST /api/auth/reset-password
 // @access  Public
 export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
-  const { email, otp, password } = req.body;
+  // Validate Input
+  const { email, otp, password } = await resetPasswordSchema.parseAsync(req.body);
 
   const resetPasswordTokenHash = crypto.createHash('sha256').update(otp).digest('hex');
 
@@ -298,13 +310,15 @@ export const resetPassword = asyncHandler(async (req: Request, res: Response) =>
 // @route   PUT /api/auth/profile
 // @access  Private
 export const updateUserProfile = asyncHandler(async (req: Request, res: Response) => {
+  // Validate Input
+  const validatedBody = await updateProfileSchema.parseAsync(req.body);
   const user = await User.findById(req.user?.id);
 
   if (user) {
-    user.name = req.body.name || user.name;
-    user.avatar = req.body.avatar || user.avatar;
-    if (req.body.password) {
-      user.password = req.body.password;
+    user.name = validatedBody.name || user.name;
+    user.avatar = validatedBody.avatar || user.avatar;
+    if (validatedBody.password) {
+      user.password = validatedBody.password;
     }
     const updatedUser = await user.save();
     res.json({
@@ -321,7 +335,7 @@ export const updateUserProfile = asyncHandler(async (req: Request, res: Response
 
 // Helper for Social Login (Firebase)
 const socialLoginHandler = async (req: Request, res: Response, provider: 'google') => {
-  const { idToken } = req.body;
+  const { idToken } = await googleLoginSchema.parseAsync(req.body);
 
   try {
     const decodedToken = await firebaseAdmin.auth().verifyIdToken(idToken);
@@ -363,6 +377,8 @@ const socialLoginHandler = async (req: Request, res: Response, provider: 'google
     });
 
   } catch (error: any) {
+    if (error.name === 'ZodError') throw error;
+    
     console.error(`${provider} Auth Error:`, error);
     if (error instanceof AppError) throw error;
     throw new AppError(`${provider} Sign-In failed. Invalid token.`, 401);

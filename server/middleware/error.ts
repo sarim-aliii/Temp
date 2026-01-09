@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { AppError } from '../utils/AppError';
-
+import { ZodError } from 'zod';
 
 export const errorHandler = (
   err: any, 
@@ -11,7 +11,7 @@ export const errorHandler = (
   console.error(`[Error] ${req.method} ${req.path}:`, err);
   let statusCode = 500;
   let message = 'Internal Server Error';
-  let errors = undefined;
+  let errors: any = undefined;
 
   // 1. Check if it's our custom AppError
   if (err instanceof AppError) {
@@ -19,7 +19,16 @@ export const errorHandler = (
     message = err.message;
     errors = err.errors;
   } 
-  // 2. Handle common Mongoose/Database errors (Optional but recommended)
+  // 2. Handle Zod Validation Errors
+  else if (err instanceof ZodError) {
+    statusCode = 400;
+    message = 'Validation Error';
+    errors = err.issues.map(e => ({ 
+      field: e.path.join('.'), 
+      message: e.message 
+    }));
+  }
+  // 3. Handle common Mongoose/Database errors
   else if (err.name === 'ValidationError') {
     statusCode = 400;
     message = 'Validation Error';
@@ -34,7 +43,7 @@ export const errorHandler = (
     message = 'Invalid Token. Please log in again.';
   }
 
-  // 3. Send Response in the format React expects
+  // 4. Send Response
   res.status(statusCode).json({
     success: false,
     message: message,

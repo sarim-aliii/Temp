@@ -30,6 +30,8 @@ export interface Message {
   id: string;
   senderId: string;
   text: string;
+  audio?: string;
+  type?: 'text' | 'audio';
   timestamp: Date;
   isAiGenerated?: boolean;
 }
