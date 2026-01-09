@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Message, User } from '../types';
+import { Message, ChatRecipient } from '../types';
 import { Send, Sparkles, Mic, MicOff, Video as VideoIcon, VideoOff, PhoneOff, ShieldCheck, Image as ImageIcon } from 'lucide-react';
 import { refineMessage } from '../services/geminiService';
 import { getSocket } from '../services/socket';
@@ -7,7 +7,7 @@ import { useAppContext } from '../context/AppContext';
 
 
 interface ChatProps {
-    recipient: User;
+    recipient: ChatRecipient;
     messages: Message[];
     onSendMessage: (text: string) => void;
     partnerSocketId: string | null;
@@ -284,7 +284,7 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
             </div>
         )}
         {messages.map((msg) => {
-          const isMe = msg.senderId === (currentUser?._id || currentUser?.id);
+          const isMe = msg.senderId === (currentUser?._id || currentUser?._id);
           return (
             <div key={msg.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}>
               <div className={`max-w-[80%] md:max-w-[60%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>

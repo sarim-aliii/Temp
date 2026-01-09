@@ -4,11 +4,11 @@ import { Navbar } from './Navbar';
 import { Feed } from './Feed';
 import { Chat } from './Chat';
 import { PairingView } from './PairingView';
-import { ViewState, Message } from '../types';
+import { ViewState, Message, ChatRecipient } from '../types';
 import { connectSocket, getSocket } from '../services/socket';
 
 export const Dashboard: React.FC = () => {
-  const { currentUser } = useAppContext();
+  const { currentUser, refreshUser } = useAppContext();
   const [view, setView] = useState<ViewState>(ViewState.FEED);
   const [messages, setMessages] = useState<Message[]>([]);
   const [partnerSocketId, setPartnerSocketId] = useState<string | null>(null);
@@ -28,7 +28,7 @@ export const Dashboard: React.FC = () => {
         
         if (data.initialState && data.initialState.messages) {
            const history = data.initialState.messages.map((msg: any) => ({
-              id: msg.id || Math.random().toString(),
+              id: msg.id || crypto.randomUUID(),
               text: msg.text || msg.content,
               senderId: msg.senderId,
               timestamp: new Date(msg.timestamp)
@@ -51,7 +51,7 @@ export const Dashboard: React.FC = () => {
       // 3. Handle Live Messages
       const handleNewMessage = (msg: any) => {
         const incomingMsg: Message = {
-          id: msg.id || Math.random().toString(),
+          id: msg.id || crypto.randomUUID(),
           senderId: msg.senderId || 'partner', 
           text: msg.text || msg.content,
           timestamp: new Date(msg.timestamp || Date.now())
@@ -74,20 +74,21 @@ export const Dashboard: React.FC = () => {
   const handleSendMessage = (text: string) => {
     const socket = getSocket();
     if (socket && currentUser) {
+      const tempId = crypto.randomUUID();
       socket.emit('clientAction', {
         type: 'SEND_MESSAGE',
         payload: {
-          id: Date.now().toString(), // Generate ID here
+          id: tempId,
           text,
-          senderId: currentUser._id || currentUser.id,
+          senderId: currentUser._id,
           timestamp: Date.now()
         }
       });
     }
   };
   
-  const onPairedSuccess = () => {
-     window.location.reload();
+  const onPairedSuccess = async () => {
+     await refreshUser();
   };
 
   if (!currentUser?.pairedWithUserId) {

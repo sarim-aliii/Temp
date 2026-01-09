@@ -1,4 +1,6 @@
+// context/AppContext.tsx
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     LoginCredentials,
     SignupCredentials,
@@ -9,6 +11,7 @@ import useLocalStorage from '../hooks/useLocalStorage';
 import { authApi, userApi } from '../services/api';
 import { auth } from '../firebase';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { disconnectSocket } from '../services/socket';
 
 interface AppContextType {
     // Auth
@@ -19,7 +22,7 @@ interface AppContextType {
     loginWithGoogle: () => Promise<void>;
     signup: (credentials: SignupCredentials) => Promise<void>;
     logout: () => void;
-    
+    refreshUser: () => Promise<void>;
 
     verifyEmail: (data: { email: string; token: string }) => Promise<void>;
     requestPasswordReset: (email: string) => Promise<void>;
@@ -45,6 +48,7 @@ interface Notification {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+    const navigate = useNavigate();
     const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'));
     const [currentUser, setCurrentUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
@@ -90,6 +94,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }, []);
 
     // --- USER PROFILE UPDATES ---
+    const refreshUser = async () => {
+        try {
+            const response = await authApi.getMe();
+            const userData = response.data || response;
+            setCurrentUser(userData);
+        } catch (error) {
+            console.error("Failed to refresh user", error);
+        }
+    };
+
     const updateUserName = async (name: string) => {
         if (!currentUser) return;
         try {
@@ -119,8 +133,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const logout = useCallback(() => {
         handleSetToken(null);
         setCurrentUser(null);
-        window.location.href = '/#/login'; 
-    }, []);
+        disconnectSocket(); // Clean up socket connection
+        navigate('/login'); // Soft navigation
+    }, [navigate]);
 
     // --- INIT AUTH ---
     useEffect(() => {
@@ -161,7 +176,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 email: data.email,
                 avatar: data.avatar,
                 isVerified: data.isVerified,
+                pairedWithUserId: data.pairedWithUserId
             });
+            navigate('/dashboard');
         } catch (error: any) {
             addNotification(error.message || 'Login failed.');
             throw error;
@@ -188,8 +205,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             email: data.email,
             avatar: data.avatar,
             isVerified: data.isVerified,
+            pairedWithUserId: data.pairedWithUserId
         });
         addNotification(`Logged in with ${providerName}!`, 'success');
+        navigate('/dashboard');
     };
 
     const loginWithGoogle = async () => {
@@ -225,8 +244,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 email: responseData.email,
                 avatar: responseData.avatar,
                 isVerified: true,
+                pairedWithUserId: responseData.pairedWithUserId
             });
             addNotification('Email verified successfully! Logging you in...', 'success');
+            navigate('/dashboard');
         } 
         catch (error: any) {
             addNotification(error.message || 'Email verification failed.');
@@ -248,6 +269,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         try {
             await authApi.resetPassword(data);
             addNotification('Password reset successfully! Please log in.', 'success');
+            navigate('/login');
         } catch (error: any) {
             addNotification(error.message || 'Password reset failed.');
             throw error;
@@ -262,6 +284,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         loginWithGoogle,
         signup,
         logout,
+        refreshUser,
         verifyEmail,
         requestPasswordReset,
         resetPassword,

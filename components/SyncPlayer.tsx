@@ -3,6 +3,7 @@ import ReactPlayer from 'react-player';
 import { getSocket } from '../services/socket';
 import { Play, Pause, Link as LinkIcon, Volume2, VolumeX } from 'lucide-react';
 
+
 interface SyncPlayerProps {
     isPaired: boolean;
 }
@@ -17,8 +18,7 @@ export const SyncPlayer: React.FC<SyncPlayerProps> = ({ isPaired }) => {
     const [playing, setPlaying] = useState(false);
     const [muted, setMuted] = useState(true); 
     const [volume, setVolume] = useState(0.8);
-    
-    // TIMERS
+    const shouldAutoplayRef = useRef(false);
     const lastInteractionTime = useRef(0); 
 
     // --- SOCKET SYNC ---
@@ -101,13 +101,20 @@ export const SyncPlayer: React.FC<SyncPlayerProps> = ({ isPaired }) => {
         if (newUrl) {
             lastInteractionTime.current = Date.now();
             setUrl(newUrl);
-            setPlaying(true);
+            setPlaying(false);
             if (isPaired) {
                 socket?.emit('clientAction', {
                     type: 'UPDATE_VIDEO_SOURCE',
                     payload: { type: 'youtube', src: newUrl }
                 });
             }
+        }
+    };
+
+    const handleReady = () => {
+        // Just reset playing state, let user click play manually
+        if (shouldAutoplayRef.current) {
+            shouldAutoplayRef.current = false;
         }
     };
 
@@ -122,13 +129,18 @@ export const SyncPlayer: React.FC<SyncPlayerProps> = ({ isPaired }) => {
                     playing={playing}
                     volume={volume}
                     muted={muted}              
-                    controls={true}  
-                    
-                    // --- CRITICAL FIX: DETACH EVENT LISTENERS ---
-                    // We REMOVED onPlay and onPause. 
-                    // This breaks the "Feedback Loop" causing the AbortError.
+                    controls={true}
+                    progressInterval={1000}
+                    onReady={handleReady}
                     onError={(e: any) => console.error("Player Error:", e)}
-                    
+                    config={{
+                        youtube: {
+                            playerVars: {
+                                controls: 1,
+                                modestbranding: 1
+                            }
+                        }
+                    }}
                     style={{ pointerEvents: 'auto' }}
                 />
             </div>

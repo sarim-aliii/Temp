@@ -9,13 +9,21 @@ export interface SignupCredentials {
 }
 
 export interface User {
-  id?: string;
   _id?: string;
   name?: string; 
   email: string;
   avatar?: string;
   pairedWithUserId?: string | null;
   inviteCode?: string;
+  isVerified?: boolean;
+}
+
+export interface ChatRecipient {
+  id: string | null | undefined;
+  name: string;
+  handle: string;
+  avatar: string;
+  email: string;
 }
 
 export interface Post {

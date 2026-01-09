@@ -3,7 +3,7 @@ import { asyncHandler } from '../utils/asyncHandler';
 import { AppError } from '../utils/AppError';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import User from '../models/User';
+import User, { IUser } from '../models/User';
 import { firebaseAdmin } from '../config/firebaseAdmin';
 import { sendEmail } from '../utils/emailService';
 
@@ -12,6 +12,50 @@ import { sendEmail } from '../utils/emailService';
 const generateToken = (id: string) => {
   return jwt.sign({ id }, process.env.JWT_SECRET!, {
     expiresIn: '30d',
+  });
+};
+
+// Helper: Generate OTP, Save to User, and Send Email
+const generateAndSendOTP = async (
+  user: IUser, 
+  type: 'verification' | 'reset',
+  subject: string,
+  title: string,
+  introText: string
+) => {
+  const otp = crypto.randomInt(100000, 999999).toString();
+  const hash = crypto.createHash('sha256').update(otp).digest('hex');
+  const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 Minutes
+
+  if (type === 'verification') {
+    user.verificationToken = hash;
+    // user.verificationCodeExpires = expires; // If you add this field to schema later
+  } else {
+    user.resetPasswordToken = hash;
+    user.resetPasswordExpire = expires;
+  }
+  
+  await user.save();
+
+  const message = `
+    <div style="font-family: Arial, sans-serif; padding: 20px;">
+      <h2>${title}</h2>
+      <p>${introText}</p>
+      <p>Please use the following code:</p>
+      
+      <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
+        <h1 style="color: #333; margin: 0; letter-spacing: 5px;">${otp}</h1>
+      </div>
+
+      <p>This code will expire in 10 minutes.</p>
+      <p>If you didn't request this, please ignore this email.</p>
+    </div>
+  `;
+
+  await sendEmail({
+    to: user.email,
+    subject: subject,
+    html: message,
   });
 };
 
@@ -27,7 +71,6 @@ export const registerUser = asyncHandler(async (req: Request, res: Response) => 
     if (user.isVerified) {
       throw new AppError('An account with this email already exists.', 400);
     }
-
     user.password = password;
     user.name = name || user.name;
   } else {
@@ -41,38 +84,14 @@ export const registerUser = asyncHandler(async (req: Request, res: Response) => 
     });
   }
 
-  // 1. Generate 6-digit OTP (Plain text for email)
-  const verificationCode = crypto.randomInt(100000, 999999).toString();
-  
-  // 2. Hash the token for database storage (Security)
-  const verificationTokenHash = crypto.createHash('sha256').update(verificationCode).digest('hex');
-
-  // 3. Update User with new token
-  user.verificationToken = verificationTokenHash;
-  await user.save();
-
-  // Send Email
-  const message = `
-    <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2>Verify Your Email</h2>
-      <p>Thanks for signing up for BlurChats!</p>
-      <p>Please use the following OTP to verify your account:</p>
-      
-      <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
-        <h1 style="color: #333; margin: 0; letter-spacing: 5px;">${verificationCode}</h1>
-      </div>
-
-      <p>This code will expire in 10 minutes.</p>
-      <p>If you didn't request this, please ignore this email.</p>
-    </div>
-  `;
-
   try {
-    await sendEmail({
-      to: user.email,
-      subject: 'BlurChats - Verify Your Account',
-      html: message,
-    });
+    await generateAndSendOTP(
+      user,
+      'verification',
+      'BlurChats - Verify Your Account',
+      'Verify Your Email',
+      'Thanks for signing up for BlurChats!'
+    );
 
     res.status(201).json({
       success: true,
@@ -111,7 +130,8 @@ export const loginUser = asyncHandler(async (req: Request, res: Response) => {
       email: user.email,
       avatar: user.avatar,
       token: generateToken(user.id.toString()),
-      isVerified: user.isVerified
+      isVerified: user.isVerified,
+      pairedWithUserId: user.pairedWithUserId
     });
   } else {
     throw new AppError('Invalid email or password', 401);
@@ -132,14 +152,12 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
   const cleanEmail = String(email).toLowerCase().trim();
   const cleanToken = String(token).replace(/\s+/g, '');
 
-  // FIX: Added .select('+verificationToken') so we can actually check it!
   const user = await User.findOne({ email: cleanEmail }).select('+verificationToken');
 
   if (!user) {
     throw new AppError('Invalid verification code or email.', 400);
   }
 
-  // Check if already verified
   if (user.isVerified) {
     return res.status(200).json({
       message: "Email is already verified. Please login.",
@@ -147,10 +165,8 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
     });
   }
 
-  // Verify Token
   const verificationTokenHash = crypto.createHash('sha256').update(cleanToken).digest('hex');
 
-  // Now user.verificationToken will be defined, and this check will work
   if (user.verificationToken !== verificationTokenHash) {
     throw new AppError('Invalid verification code.', 400);
   }
@@ -166,6 +182,7 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
     email: user.email,
     avatar: user.avatar,
     token: generateToken(user.id.toString()),
+    pairedWithUserId: user.pairedWithUserId
   });
 });
 
@@ -177,7 +194,7 @@ export const getUserProfile = asyncHandler(async (req: Request, res: Response) =
   const user = await User.findById(req.user?.id).select('-password');
   if (user) {
     res.json({
-      id: user._id,
+      _id: user._id,
       name: user.name,
       email: user.email,
       avatar: user.avatar,
@@ -206,35 +223,13 @@ export const resendVerificationEmail = asyncHandler(async (req: Request, res: Re
     throw new AppError("This account is already verified.", 400);
   }
 
-  // Generate NEW Token
-  const verificationToken = crypto.randomInt(100000, 999999).toString();
-  const verificationTokenHash = crypto.createHash('sha256').update(verificationToken).digest('hex');
-
-  // Update User
-  user.verificationToken = verificationTokenHash;
-  await user.save();
-
-  // Send Email
-  const message = `
-    <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2>Verify Your Email</h2>
-      <p>You requested a new verification code for BlurChats.</p>
-      <p>Please use the following OTP to verify your account:</p>
-      
-      <div style="background-color: #f4f4f4; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
-        <h1 style="color: #333; margin: 0; letter-spacing: 5px;">${verificationToken}</h1>
-      </div>
-
-      <p>This code will expire in 10 minutes.</p>
-      <p>If you didn't request this, please ignore this email.</p>
-    </div>
-  `;
-
-  await sendEmail({
-    to: user.email,
-    subject: 'BlurChats - New Verification Code',
-    html: message,
-  });
+  await generateAndSendOTP(
+    user,
+    'verification',
+    'BlurChats - New Verification Code',
+    'Verify Your Email',
+    'You requested a new verification code.'
+  );
 
   res.status(200).json({ message: "Verification code sent" });
 });
@@ -249,8 +244,6 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
   const user = await User.findOne({ email: cleanEmail });
 
   if (!user) {
-    // Security Best Practice: Don't reveal if user exists.
-    // However, for this implementation we follow your existing flow.
     throw new AppError("User not found", 404);
   }
 
@@ -258,28 +251,14 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
     throw new AppError(`You registered with ${user.authMethod}. Please sign in with that.`, 400);
   }
 
-  const resetOTP = crypto.randomInt(100000, 999999).toString();
-
-  user.resetPasswordToken = crypto.createHash('sha256').update(resetOTP).digest('hex');
-  user.resetPasswordExpire = new Date(Date.now() + 10 * 60 * 1000); // 10 Minutes
-  await user.save();
-
-  const message = `
-    <div style="font-family: Arial, sans-serif; padding: 20px;">
-      <h2>Reset Your Password</h2>
-      <p>Please use the following code to reset your password:</p>
-      <div style="background-color: #f4f4f4; padding: 15px; text-align: center;">
-        <h1 style="color: #333; margin: 0; letter-spacing: 5px;">${resetOTP}</h1>
-      </div>
-    </div>
-  `;
-
   try {
-    await sendEmail({
-      to: user.email,
-      subject: 'BlurChats - Password Reset Code',
-      html: message,
-    });
+    await generateAndSendOTP(
+      user,
+      'reset',
+      'BlurChats - Password Reset Code',
+      'Reset Your Password',
+      'You requested to reset your password.'
+    );
     res.status(200).json({ message: "OTP sent to email" });
   } catch (emailError) {
     user.resetPasswordToken = undefined;
@@ -333,6 +312,7 @@ export const updateUserProfile = asyncHandler(async (req: Request, res: Response
       name: updatedUser.name,
       email: updatedUser.email,
       avatar: updatedUser.avatar,
+      pairedWithUserId: updatedUser.pairedWithUserId
     });
   } else {
     throw new AppError('User not found', 404);
@@ -379,6 +359,7 @@ const socialLoginHandler = async (req: Request, res: Response, provider: 'google
       email: user.email,
       avatar: user.avatar,
       token: generateToken(user.id.toString()),
+      pairedWithUserId: user.pairedWithUserId
     });
 
   } catch (error: any) {

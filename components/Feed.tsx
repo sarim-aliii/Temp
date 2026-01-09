@@ -41,14 +41,12 @@ const PostCard: React.FC<{ post: Post; onUserClick: (id: string) => void; curren
 
   const isLiked = currentUserId ? likes.includes(currentUserId) : false;
 
-  // Update local state when props change (from socket updates)
   useEffect(() => {
       setLikes(post.likes);
       setComments(post.comments);
   }, [post.likes, post.comments]);
 
   const handleLike = async () => {
-    // Optimistic UI update
     const previousLikes = [...likes];
     if (isLiked && currentUserId) {
         setLikes(prev => prev.filter(id => id !== currentUserId));
@@ -283,7 +281,7 @@ export const Feed: React.FC<FeedProps> = ({ onUserClick }) => {
             <PostCard 
                 post={post} 
                 onUserClick={onUserClick} 
-                currentUserId={currentUser?._id || currentUser?.id} 
+                currentUserId={currentUser?._id} 
             />
           </Reveal>
         ))}
