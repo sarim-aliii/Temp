@@ -20,7 +20,13 @@ export interface IUser extends Document {
   isPremium: boolean;
   pairedWithUserId?: mongoose.Schema.Types.ObjectId;
   inviteCode?: string;
-
+  pushSubscription?: {
+    endpoint: string;
+    keys: {
+      p256dh: string;
+      auth: string;
+    };
+  };
   password?: string;
 
   matchPassword(enteredPassword: string): Promise<boolean>;
@@ -45,6 +51,13 @@ const UserSchema: Schema = new Schema(
     isPremium: { type: Boolean, default: false },
     pairedWithUserId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     inviteCode: { type: String, sparse: true, unique: true },
+    pushSubscription: {
+      endpoint: { type: String },
+      keys: {
+        p256dh: { type: String },
+        auth: { type: String }
+      }
+    },
   },
   { timestamps: true }
 );

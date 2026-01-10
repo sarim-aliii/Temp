@@ -1,9 +1,13 @@
 import { Server, Socket } from 'socket.io';
-import { ClientAction, AuthenticatedSocket } from '../types';
+import crypto from 'crypto';
+import { ClientAction, AuthenticatedSocket, ChatMessage } from '../types';
 import { roomState, getDefaultRoomState } from '../state/roomStore';
 import JournalEntry from '../models/JournalEntry';
 import User from '../models/User';
+import Message from '../models/Message';
 import Logger from '../utils/logger';
+import { sendNotification } from '../utils/pushService';
+
 
 export const handleClientAction = async (
   io: Server,
@@ -13,7 +17,7 @@ export const handleClientAction = async (
 ) => {
   const authSocket = socket as unknown as AuthenticatedSocket;
   const rid = authSocket.roomId;
-  
+
   if (!rid || !roomState[rid]) return;
 
   Logger.debug(`[Room: ${rid}] Action: ${action.type} from ${user.email}`);
@@ -48,12 +52,61 @@ export const handleClientAction = async (
       currentState.isScreenSharing = action.payload.type === 'screen';
       break;
 
-    case 'SEND_MESSAGE':
+    case 'SEND_MESSAGE': {
+      const { content, type = 'text', image } = action.payload;
+
+      // 1. Construct the message object matching ChatMessage interface
+      const messageData: ChatMessage = {
+        id: crypto.randomUUID(),
+        senderId: user._id.toString(),
+        senderName: user.name,
+        senderAvatar: user.avatar,
+        content: content || (image ? 'Image Attachment' : ''), // Fallback content if only image
+        image: image, // Add image to payload
+        type: type as 'text' | 'audio' | 'image' | 'system',
+        timestamp: new Date().toISOString(),
+      };
+
+      // 2. Emit to Room
+      io.to(rid).emit('newChatMessage', messageData);
+
+      // 3. Update in-memory state
       if (currentState.messages.length > 50) currentState.messages.shift();
-      currentState.messages.push(action.payload);
-      io.to(rid).emit('newChatMessage', action.payload);
+      currentState.messages.push(messageData);
       roomState[rid] = currentState;
+
+      // 4. PERSIST: Save to MongoDB
+      try {
+        await Message.create({
+          roomId: rid,
+          senderId: user._id,
+          senderName: user.name,
+          senderAvatar: user.avatar,
+          content: content || (image ? 'Image Attachment' : ''),
+          image: image, // Persist image
+          type
+        });
+      } catch (error) {
+        Logger.error("❌ Failed to save message to DB:", error);
+      }
+
+      try {
+        const partner = await User.findById(user.pairedWithUserId);
+        if (partner && partner.pushSubscription) {
+          const payload = {
+            title: user.name || 'Partner',
+            body: action.payload.content || (image ? 'Sent an image' : 'New Message'),
+            url: '/', // Link to open
+            icon: '/pwa-192x192.png'
+          };
+          sendNotification(partner.pushSubscription, payload);
+        }
+      } catch (err) {
+        console.error("Push trigger failed:", err);
+      }
+
       return;
+    }
 
     case 'SET_TYPING':
       currentState.typingUser = action.payload.isTyping ? user.email : null;

@@ -29,10 +29,11 @@ export interface ChatRecipient {
 export interface Message {
   id: string;
   senderId: string;
-  text: string;
+  content: string;
   audio?: string;
-  type?: 'text' | 'audio';
-  timestamp: Date;
+  image?: string;
+  type?: 'text' | 'audio'| 'image' | 'system';
+  timestamp: string | Date;
   isAiGenerated?: boolean;
 }
 

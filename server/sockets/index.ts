@@ -3,11 +3,11 @@ import jwt from 'jsonwebtoken';
 import { AuthenticatedSocket } from '../types';
 import User from '../models/User';
 import JournalEntry from '../models/JournalEntry';
+import Message from '../models/Message';
 import Logger from '../utils/logger';
 import { getRoomId } from '../utils/roomUtils';
 import { roomState, roomTimers, getDefaultRoomState } from '../state/roomStore';
 import { handleClientAction } from './actionHandler';
-
 
 // --- Constants ---
 const SYNC_INTERVAL = 1500;
@@ -20,11 +20,11 @@ export const initSocketServer = (io: Server) => {
     const now = Date.now();
     for (const roomId in roomState) {
       const state = roomState[roomId];
-      const timeInRoom = now - state.createdAt;
+      // const timeInRoom = now - state.createdAt;
 
       // Check Free Trial
-      if (!state.isPremium && timeInRoom > FREE_TRIAL_LIMIT && state.videoSource.type !== null) {
-        Logger.warn(`[Room: ${roomId}] Free trial expired.`);
+      if (!state.isPremium && (now - state.createdAt) > FREE_TRIAL_LIMIT && state.videoSource.type !== null) {
+        // Logger.warn(`[Room: ${roomId}] Free trial expired.`);
         state.videoSource = { type: null, src: null };
         state.playbackState.isPlaying = false;
         io.to(roomId).emit('serverUpdateState', state);
@@ -46,7 +46,6 @@ export const initSocketServer = (io: Server) => {
   }, SYNC_INTERVAL);
 
   // 2. Authentication Middleware
-  // SECURITY: Ensure every socket connection has a valid JWT
   io.use(async (socket: Socket, next) => {
     const token = socket.handshake.auth.token;
     if (!token) {
@@ -96,14 +95,33 @@ export const initSocketServer = (io: Server) => {
       try {
         const partner = await User.findById(user.pairedWithUserId);
         const isPremium = user.isPremium || partner?.isPremium || false;
+        
+        // Load Journal Entries
         const entries = await JournalEntry.find({ roomId }).sort({ createdAt: 'asc' });
         
+        // Load Chat History (Last 50 messages)
+        const messages = await Message.find({ roomId })
+          .sort({ createdAt: -1 }) // Get newest first
+          .limit(50);
+        
+        // Reverse back to chronological order for the client
+        const history = messages.reverse().map(msg => ({
+          id: msg._id.toString(),
+          senderId: msg.senderId.toString(),
+          senderName: msg.senderName,
+          senderAvatar: msg.senderAvatar,
+          content: msg.content,
+          type: msg.type,
+          timestamp: msg.createdAt.toISOString()
+        }));
+
         roomState[roomId].journalEntries = entries.map(e => ({
           ...e.toObject(),
           _id: e._id.toString(),
           authorId: e.authorId.toString()
         })) as any;
-        
+
+        roomState[roomId].messages = history as any;
         roomState[roomId].isPremium = isPremium;
         roomState[roomId].createdAt = Date.now();
       } catch (e) {

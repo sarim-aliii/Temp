@@ -1,5 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+
 export interface IJournalEntry extends Document {
   roomId: string;
   authorId: mongoose.Schema.Types.ObjectId;

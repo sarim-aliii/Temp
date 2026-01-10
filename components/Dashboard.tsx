@@ -6,12 +6,16 @@ import { Chat } from './Chat';
 import { PairingView } from './PairingView';
 import { ViewState, Message } from '../types';
 import { connectSocket, getSocket } from '../services/socket';
+import { usePushNotifications } from '../hooks/usePushNotifications';
+
 
 export const Dashboard: React.FC = () => {
   const { currentUser, refreshUser } = useAppContext();
   const [view, setView] = useState<ViewState>(ViewState.FEED);
   const [messages, setMessages] = useState<Message[]>([]);
   const [partnerSocketId, setPartnerSocketId] = useState<string | null>(null);
+
+  usePushNotifications(); 
 
   // Initialize Socket when component mounts
   useEffect(() => {
@@ -29,7 +33,9 @@ export const Dashboard: React.FC = () => {
         if (data.initialState && data.initialState.messages) {
            const history = data.initialState.messages.map((msg: any) => ({
               id: msg.id || crypto.randomUUID(),
-              text: msg.text || msg.content,
+              text: msg.text || msg.content, 
+              content: msg.content || msg.text, 
+              image: msg.image, // Load history image
               audio: msg.audio,
               type: msg.type || 'text',
               senderId: msg.senderId,
@@ -54,8 +60,9 @@ export const Dashboard: React.FC = () => {
       const handleNewMessage = (msg: any) => {
         const incomingMsg: Message = {
           id: msg.id || crypto.randomUUID(),
-          senderId: msg.senderId || 'partner', 
-          text: msg.text || msg.content,
+          senderId: msg.senderId || 'partner',
+          content: msg.content || msg.text,
+          image: msg.image, // Handle live image
           audio: msg.audio,
           type: msg.type || 'text',
           timestamp: new Date(msg.timestamp || Date.now())
@@ -75,19 +82,16 @@ export const Dashboard: React.FC = () => {
     }
   }, [currentUser?.pairedWithUserId]);
 
-  const handleSendMessage = (content: string, type: 'text' | 'audio' = 'text') => {
+  // UPDATED: Handle image parameter
+  const handleSendMessage = (content: string, type: 'text' | 'audio' | 'image' = 'text', image?: string) => {
     const socket = getSocket();
     if (socket && currentUser) {
-      const tempId = crypto.randomUUID();
       socket.emit('clientAction', {
         type: 'SEND_MESSAGE',
         payload: {
-          id: tempId,
-          text: type === 'text' ? content : 'Voice Message',
-          audio: type === 'audio' ? content : undefined,
+          content,
           type,
-          senderId: currentUser._id,
-          timestamp: Date.now()
+          image, // Send image to server
         }
       });
     }

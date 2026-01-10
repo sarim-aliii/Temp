@@ -8,7 +8,6 @@ export interface AuthenticatedSocket extends Socket {
   isBuffering?: boolean;
 }
 
-
 export interface VideoSource {
   type: 'youtube' | 'url' | 'file' | 'screen' | null;
   src: string | null;
@@ -24,10 +23,13 @@ export interface PlaybackState {
 export interface ChatMessage {
   id: string;
   senderId: string;
-  text: string;
+  senderName?: string;  
+  senderAvatar?: string;
+  content: string;
   audio?: string;
-  type?: 'text' | 'audio';
-  timestamp: number;
+  image?: string;
+  type?: 'text' | 'audio' | 'image' | 'system';
+  timestamp: string | number;
 }
 
 export interface UIState {
@@ -66,7 +68,7 @@ export type ClientAction =
   | { type: 'UPDATE_PLAYBACK_STATE'; payload: Partial<PlaybackState> }
   | { type: 'UPDATE_PLAYBACK_TIME'; payload: { currentTime: number } }
   | { type: 'UPDATE_VIDEO_SOURCE'; payload: VideoSource }
-  | { type: 'SEND_MESSAGE'; payload: ChatMessage }
+  | { type: 'SEND_MESSAGE'; payload: { content: string; type?: 'text' | 'audio' | 'image'; image?: string; } }
   | { type: 'SET_TYPING'; payload: { isTyping: boolean } }
   | { type: 'UPDATE_UI_STATE'; payload: Partial<UIState> }
   | { type: 'SET_AMBIENT_SOUND'; payload: Partial<AmbientSound> }
