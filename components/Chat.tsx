@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Message, ChatRecipient } from '../types';
-import { Send, Sparkles, Mic, MicOff, Video as VideoIcon, VideoOff, PhoneOff, ShieldCheck, Image as ImageIcon, Monitor, MonitorOff, AlertCircle, X } from 'lucide-react';
+import { Send, Sparkles, Mic, MicOff, Video as VideoIcon, VideoOff, PhoneOff, ShieldCheck, Image as ImageIcon, Monitor, MonitorOff, AlertCircle, X, Trash2 } from 'lucide-react';
 import { refineMessage } from '../services/geminiService';
 import { getSocket } from '../services/socket';
 import { useAppContext } from '../context/AppContext';
@@ -49,6 +49,11 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // --- Audio Handling State ---
+    const [isRecording, setIsRecording] = useState(false);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+
     // --- Video Call State ---
     const [stream, setStream] = useState<MediaStream | null>(null);
     const [partnerStream, setPartnerStream] = useState<MediaStream | null>(null);
@@ -78,7 +83,20 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
 
     useEffect(() => {
         scrollToBottom();
-    }, [messages, selectedImage]); 
+    }, [messages, selectedImage, isRecording]); 
+
+    useEffect(() => {
+        if (partnerVideo.current && partnerStream) {
+            console.log("Attaching partner stream to video element:", partnerStream.id);
+            partnerVideo.current.srcObject = partnerStream;
+        }
+    }, [partnerStream]);
+
+    useEffect(() => {
+        if (myVideo.current && stream) {
+            myVideo.current.srcObject = stream;
+        }
+    }, [stream]);
 
     // --- Socket & Signaling Setup (WebRTC) ---
     useEffect(() => {
@@ -120,21 +138,24 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
         socket.on('p2pSignal', handleSignal);
         return () => {
             socket.off('p2pSignal', handleSignal);
-            if (isCallActive) endCall();
+            // Don't auto-end call here, allow persistence if re-rendering
         };
     }, [isCallActive]);
 
     const initializePeer = async (targetId: string) => {
         try {
+            // 1. Get User Media first
             const currentStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             setStream(currentStream);
-            if (myVideo.current) myVideo.current.srcObject = currentStream;
-
+            
+            // 2. Create Peer
             const peer = new RTCPeerConnection(RTC_CONFIG);
             peerRef.current = peer;
 
+            // 3. Add Tracks to Peer
             currentStream.getTracks().forEach(track => peer.addTrack(track, currentStream));
 
+            // 4. Handle ICE Candidates
             peer.onicecandidate = (event) => {
                 if (event.candidate && socket) {
                     socket.emit('p2pSignal', { target: targetId, data: { candidate: event.candidate } });
@@ -143,17 +164,26 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
 
             peer.oniceconnectionstatechange = () => {
                 const state = peer.iceConnectionState;
+                console.log("ICE State Change:", state);
                 setConnectionStatus(state as any);
             };
 
+            // 5. Handle Remote Tracks (CRITICAL FIX)
             peer.ontrack = (event) => {
-                setPartnerStream(event.streams[0]);
-                if (partnerVideo.current) partnerVideo.current.srcObject = event.streams[0];
+                console.log("Received Remote Stream Track:", event.streams[0]);
+                if (event.streams && event.streams[0]) {
+                    setPartnerStream(event.streams[0]);
+                    // Direct assignment fallback
+                    if (partnerVideo.current) {
+                        partnerVideo.current.srcObject = event.streams[0];
+                    }
+                }
             };
 
             setIsCallActive(true);
             return peer;
         } catch (err) {
+            console.error("Media Error:", err);
             alert("Could not access camera/microphone. Please check permissions.");
             return null;
         }
@@ -161,6 +191,10 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
 
     const startCall = async () => {
         if (!partnerSocketId) return alert("Waiting for partner to join...");
+        
+        // Prevent duplicate calls
+        if (peerRef.current) return;
+
         const peer = await initializePeer(partnerSocketId);
         if (peer && socket) {
             const offer = await peer.createOffer();
@@ -257,6 +291,58 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
                 setSelectedImage(reader.result as string);
             };
             reader.readAsDataURL(file);
+        }
+    };
+
+    // --- Audio Recording Logic ---
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                const reader = new FileReader();
+                reader.readAsDataURL(audioBlob);
+                reader.onloadend = () => {
+                    const base64Audio = reader.result as string;
+                    onSendMessage('Audio Message', 'audio', base64Audio);
+                };
+                
+                // Stop all tracks to release microphone
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            mediaRecorder.start();
+            setIsRecording(true);
+        } catch (err) {
+            console.error("Error accessing microphone:", err);
+            alert("Could not access microphone. Please check permissions.");
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+        }
+    };
+
+    const cancelRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.onstop = null; // Prevent sending
+            mediaRecorderRef.current.stop();
+            mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop()); // Stop stream
+            setIsRecording(false);
+            audioChunksRef.current = [];
         }
     };
 
@@ -366,14 +452,26 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
                             <div className={`max-w-[80%] md:max-w-[60%] flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                                 
                                 {/* Image Message */}
-                                {msg.image && (
+                                {msg.image && msg.type !== 'audio' && (
                                     <div className="mb-2 rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900">
                                         <img src={msg.image} alt="Attachment" className="max-w-full h-auto max-h-64 object-contain" />
                                     </div>
                                 )}
 
+                                {/* Audio Message */}
+                                {(msg.type === 'audio' || (msg.image && msg.content === 'Audio Message')) && (
+                                    <div className={`mb-2 p-3 rounded-2xl border ${isMe ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-900 border-zinc-800'}`}>
+                                        <audio 
+                                            controls 
+                                            src={msg.image} // Assumes base64 audio is stored in image field based on logic
+                                            className="h-8 max-w-[200px]" 
+                                        />
+                                        <p className="text-[10px] font-mono text-zinc-500 mt-1 uppercase">Audio Signal</p>
+                                    </div>
+                                )}
+
                                 {/* Text Content */}
-                                {msg.content && msg.content !== 'Image Attachment' && (
+                                {msg.content && msg.content !== 'Image Attachment' && msg.content !== 'Audio Message' && (
                                     <div className={`relative px-5 py-3 rounded-2xl text-sm leading-relaxed ${isMe ? 'bg-nothing-red text-white rounded-br-none' : 'bg-zinc-900 text-zinc-200 border border-zinc-800 rounded-bl-none'}`}>
                                         {msg.content}
                                         <div className={`absolute top-0 ${isMe ? '-left-1' : '-right-1'} w-1 h-1 bg-current opacity-20`}></div>
@@ -390,7 +488,7 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
             {/* Input Area */}
             <div className="px-4 md:px-8 mt-auto">
                 {/* --- Image Preview Section --- */}
-                {selectedImage && (
+                {selectedImage && !isRecording && (
                     <div className="mb-4 relative inline-block animate-in slide-in-from-bottom-5 fade-in duration-300">
                         <div className="relative rounded-xl overflow-hidden border border-zinc-700 group">
                             <img src={selectedImage} alt="Preview" className="h-32 w-auto object-cover opacity-80" />
@@ -406,7 +504,7 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
                 )}
 
                 {/* AI & Tone Buttons */}
-                {inputText.length > 3 && !selectedImage && (
+                {inputText.length > 3 && !selectedImage && !isRecording && (
                     <div className="flex gap-2 mb-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
                         <button onClick={() => handleAiEnhance('romantic')} disabled={isAiProcessing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-[10px] font-mono hover:border-nothing-red hover:text-nothing-red transition-colors disabled:opacity-50"><Sparkles size={10} /> WARM</button>
                         <button onClick={() => handleAiEnhance('cryptic')} disabled={isAiProcessing} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-[10px] font-mono hover:border-white hover:text-white transition-colors disabled:opacity-50"><Sparkles size={10} /> MINIMAL</button>
@@ -417,33 +515,70 @@ export const Chat: React.FC<ChatProps> = ({ recipient, messages, onSendMessage, 
                     <div className="absolute inset-0 bg-gradient-to-r from-zinc-800 to-zinc-900 rounded-2xl blur opacity-20 group-hover:opacity-40 transition-opacity"></div>
                     <div className="relative bg-black border border-zinc-800 rounded-2xl flex items-center p-2 focus-within:border-zinc-600 transition-colors">
                         
-                        {/* Image Upload Trigger */}
-                        <button 
-                            onClick={() => fileInputRef.current?.click()} 
-                            className={`p-2 transition-colors ${selectedImage ? 'text-nothing-red' : 'text-zinc-500 hover:text-white'}`}
-                        >
-                            <ImageIcon size={20} />
-                        </button>
-                        <input type="file" ref={fileInputRef} onChange={handleImageSelect} accept="image/*" className="hidden" />
+                        {isRecording ? (
+                            // --- Recording UI ---
+                            <div className="flex-1 flex items-center justify-between px-2 animate-in fade-in duration-200">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.5)]"></div>
+                                    <span className="font-mono text-xs text-red-500 uppercase tracking-wider">Recording Signal...</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button 
+                                        onClick={cancelRecording} 
+                                        className="p-2 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-full transition-colors"
+                                        title="Cancel"
+                                    >
+                                        <Trash2 size={18} />
+                                    </button>
+                                    <button 
+                                        onClick={stopRecording} 
+                                        className="p-2 bg-nothing-red text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
+                                        title="Send Audio"
+                                    >
+                                        <Send size={18} />
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            // --- Standard Input UI ---
+                            <>
+                                {/* Image Upload Trigger */}
+                                <button 
+                                    onClick={() => fileInputRef.current?.click()} 
+                                    className={`p-2 transition-colors ${selectedImage ? 'text-nothing-red' : 'text-zinc-500 hover:text-white'}`}
+                                >
+                                    <ImageIcon size={20} />
+                                </button>
+                                <input type="file" ref={fileInputRef} onChange={handleImageSelect} accept="image/*" className="hidden" />
 
-                        <input 
-                            type="text" 
-                            value={inputText} 
-                            onChange={(e) => setInputText(e.target.value)} 
-                            onKeyDown={(e) => e.key === 'Enter' && handleSend()} 
-                            placeholder={isAiProcessing ? "Refining signal..." : (selectedImage ? "Add a caption..." : "Inject signal...")} 
-                            disabled={isAiProcessing} 
-                            className="flex-1 bg-transparent border-none outline-none text-white px-3 font-light placeholder:text-zinc-700" 
-                        />
-                        <button className="p-2 text-zinc-500 hover:text-white transition-colors"><Mic size={20} /></button>
-                        
-                        <button 
-                            onClick={handleSend} 
-                            disabled={(!inputText.trim() && !selectedImage) || isAiProcessing} 
-                            className="p-2 bg-zinc-900 rounded-xl text-white ml-2 hover:bg-nothing-red transition-colors disabled:opacity-50"
-                        >
-                            <Send size={18} />
-                        </button>
+                                <input 
+                                    type="text" 
+                                    value={inputText} 
+                                    onChange={(e) => setInputText(e.target.value)} 
+                                    onKeyDown={(e) => e.key === 'Enter' && handleSend()} 
+                                    placeholder={isAiProcessing ? "Refining signal..." : (selectedImage ? "Add a caption..." : "Inject signal...")} 
+                                    disabled={isAiProcessing} 
+                                    className="flex-1 bg-transparent border-none outline-none text-white px-3 font-light placeholder:text-zinc-700" 
+                                />
+                                
+                                {/* Start Recording Button */}
+                                <button 
+                                    onClick={startRecording}
+                                    className="p-2 text-zinc-500 hover:text-red-500 transition-colors"
+                                    title="Record Audio"
+                                >
+                                    <Mic size={20} />
+                                </button>
+                                
+                                <button 
+                                    onClick={handleSend} 
+                                    disabled={(!inputText.trim() && !selectedImage) || isAiProcessing} 
+                                    className="p-2 bg-zinc-900 rounded-xl text-white ml-2 hover:bg-nothing-red transition-colors disabled:opacity-50"
+                                >
+                                    <Send size={18} />
+                                </button>
+                            </>
+                        )}
                     </div>
                 </div>
                 <div className="text-center mt-2 pb-2">

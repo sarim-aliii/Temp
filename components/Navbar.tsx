@@ -49,6 +49,8 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView }) => {
             <MessageSquarePlus size={20} />
           </button>
 
+          <div className="w-[1px] h-4 bg-zinc-800"></div>
+
           {/* ACTION: LOGOUT */}
           <button 
             onClick={logout}
