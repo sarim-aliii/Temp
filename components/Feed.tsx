@@ -2,11 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Reveal } from './Reveal';
 import { SyncPlayer } from './SyncPlayer';
 import { useAppContext } from '../context/AppContext';
-import { Heart, MessageSquare, Share2, Send, CornerDownRight, Zap, Image as ImageIcon, X } from 'lucide-react';
+import { Heart, MessageSquare, Share2, Send, CornerDownRight, Zap, Image as ImageIcon, X, Video } from 'lucide-react';
 import { postsApi } from '../services/api';
 import { getSocket } from '../services/socket';
 import { formatDistanceToNow } from 'date-fns';
-
 
 interface User {
     _id: string;
@@ -25,12 +24,24 @@ interface Post {
   _id: string;
   author: User;
   content: string;
-  image?: string;
+  image?: string; // Reused for image OR video URL
   likes: string[];
   comments: Comment[];
   type: string;
   createdAt: string;
 }
+
+// --- Helper: Extract YouTube ID ---
+const getYoutubeId = (url: string) => {
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+};
+
+// --- Helper: Check if URL is a video file ---
+const isVideoFile = (url: string) => {
+    return url.match(/\.(mp4|webm|ogg)$/i) || url.startsWith('data:video/');
+};
 
 const PostCard: React.FC<{ post: Post; onUserClick: (id: string) => void; currentUserId?: string }> = ({ post, onUserClick, currentUserId }) => {
     const [likes, setLikes] = useState<string[]>(post.likes || []);
@@ -40,6 +51,10 @@ const PostCard: React.FC<{ post: Post; onUserClick: (id: string) => void; curren
     const [isSharing, setIsSharing] = useState(false);
   
     const isLiked = currentUserId ? likes.includes(currentUserId) : false;
+    
+    // Check for Media Types
+    const youtubeId = getYoutubeId(post.content);
+    const isVideo = post.image ? isVideoFile(post.image) : false;
   
     useEffect(() => {
         setLikes(post.likes);
@@ -111,21 +126,53 @@ const PostCard: React.FC<{ post: Post; onUserClick: (id: string) => void; curren
         </div>
   
         <div className="p-0 relative">
+          {/* 1. Uploaded Media (Image OR Video) */}
           {post.image && (
-            <div className="w-full overflow-hidden relative group/image">
-              <img 
-                 src={post.image} 
-                 alt="Post" 
-                 className="w-full h-auto max-h-[80vh] object-contain bg-black/50 transition-transform duration-1000" 
-              />
+            <div className="w-full overflow-hidden relative group/image bg-black/50">
+               {isVideo ? (
+                   <video 
+                       src={post.image} 
+                       controls 
+                       className="w-full h-auto max-h-[80vh]" 
+                   />
+               ) : (
+                   <img 
+                       src={post.image} 
+                       alt="Post" 
+                       className="w-full h-auto max-h-[80vh] object-contain transition-transform duration-1000" 
+                   />
+               )}
             </div>
           )}
+
+          {/* 2. YouTube Embed */}
+          {youtubeId && !post.image && (
+             <div className="relative w-full aspect-video bg-black">
+                 <iframe 
+                    src={`https://www.youtube.com/embed/${youtubeId}`} 
+                    title="YouTube video player"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    className="absolute top-0 left-0 w-full h-full border-none"
+                 />
+             </div>
+          )}
+
+          {/* 3. Standard Text Content (Only if no media) */}
+          {!post.image && !youtubeId && (
+             <div className="p-10 min-h-[150px] flex flex-col items-center justify-center text-center bg-dot-pattern">
+                 <p className="text-xl md:text-2xl font-light leading-relaxed tracking-tight italic">
+                    "{post.content}"
+                 </p>
+             </div>
+          )}
           
-          <div className={`${post.image ? 'p-4 bg-black/20' : 'p-10 min-h-[220px] flex flex-col items-center justify-center text-center bg-dot-pattern'}`}>
-             <p className={`${post.image ? 'text-sm font-light text-zinc-200' : 'text-xl md:text-2xl font-light leading-relaxed tracking-tight italic'}`}>
-                {post.image ? post.content : `"${post.content}"`}
-             </p>
-          </div>
+          {/* Show text content below media if media exists */}
+          {(post.image || youtubeId) && post.content && !youtubeId && (
+              <div className="p-4 bg-black/20">
+                  <p className="text-sm font-light text-zinc-200">{post.content}</p>
+              </div>
+          )}
 
            {isSharing && (
             <div className="absolute inset-0 z-20 bg-nothing-red/90 backdrop-blur-md flex items-center justify-center animate-in fade-in zoom-in duration-300">
@@ -199,21 +246,33 @@ interface FeedProps {
 // --- Main Feed Component ---
 export const Feed: React.FC<FeedProps> = ({ onUserClick }) => {
   const { currentUser } = useAppContext();
-  const [posts, setPosts] = useState<Post[]>([]);
+  
+  // 1. Initialize State from LocalStorage
+  const [posts, setPosts] = useState<Post[]>(() => {
+      try {
+          const saved = localStorage.getItem('blur_feed_cache');
+          return saved ? JSON.parse(saved) : [];
+      } catch (e) {
+          return [];
+      }
+  });
+
   const isPaired = !!currentUser?.pairedWithUserId;
 
   const [newPostContent, setNewPostContent] = useState('');
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  // Renamed to selectedMedia to reflect it can be video
+  const [selectedMedia, setSelectedMedia] = useState<string | null>(null);
   const [isPosting, setIsPosting] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. Fetch initial posts
+  // 2. Fetch fresh posts
   useEffect(() => {
     const fetchPosts = async () => {
         try {
             const data = await postsApi.getAll();
             setPosts(data);
+            localStorage.setItem('blur_feed_cache', JSON.stringify(data));
         } catch (e) {
             console.error("Failed to load feed", e);
         }
@@ -221,27 +280,34 @@ export const Feed: React.FC<FeedProps> = ({ onUserClick }) => {
     fetchPosts();
   }, []);
 
-  // 2. Setup Real-time Listeners
+  // 3. Setup Real-time Listeners
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
 
-    // Handle new post
-    const handleNewPost = (newPost: Post) => {
+    const updatePostsAndCache = (updater: (prev: Post[]) => Post[]) => {
         setPosts(prev => {
+            const newState = updater(prev);
+            localStorage.setItem('blur_feed_cache', JSON.stringify(newState));
+            return newState;
+        });
+    };
+
+    const handleNewPost = (newPost: Post) => {
+        updatePostsAndCache(prev => {
             if (prev.some(p => p._id === newPost._id)) return prev;
             return [newPost, ...prev];
         });
     };
 
     const handlePostUpdate = (data: { postId: string, likes: string[] }) => {
-        setPosts(prev => prev.map(p => 
+        updatePostsAndCache(prev => prev.map(p => 
             p._id === data.postId ? { ...p, likes: data.likes } : p
         ));
     };
 
     const handlePostComment = (data: { postId: string, comments: Comment[] }) => {
-        setPosts(prev => prev.map(p => 
+        updatePostsAndCache(prev => prev.map(p => 
             p._id === data.postId ? { ...p, comments: data.comments } : p
         ));
     };
@@ -257,30 +323,37 @@ export const Feed: React.FC<FeedProps> = ({ onUserClick }) => {
     };
   }, []);
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Updated to handle both Image and Video
+  const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+        // Basic validation: Check size (e.g., limit to 10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            alert("File size too large (Max 10MB)");
+            return;
+        }
+
         const reader = new FileReader();
         reader.onloadend = () => {
-            setSelectedImage(reader.result as string);
+            setSelectedMedia(reader.result as string);
         };
         reader.readAsDataURL(file);
     }
   };
 
   const handleCreatePost = async () => {
-    if (!newPostContent.trim() && !selectedImage) return;
+    if (!newPostContent.trim() && !selectedMedia) return;
 
     setIsPosting(true);
     try {
         await postsApi.create({ 
             content: newPostContent,
-            image: selectedImage || undefined
+            image: selectedMedia || undefined // Passing video data here too
         });
         
         // Reset state
         setNewPostContent('');
-        setSelectedImage(null);
+        setSelectedMedia(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
         
     } catch (error) {
@@ -330,13 +403,13 @@ export const Feed: React.FC<FeedProps> = ({ onUserClick }) => {
                             className="w-full bg-transparent border-none text-white placeholder-zinc-600 focus:ring-0 resize-none h-20 text-sm font-light leading-relaxed scrollbar-hide"
                         />
                         
-                        {/* Image Preview Area */}
-                        {selectedImage && (
+                        {/* Media Preview Area */}
+                        {selectedMedia && (
                             <div className="relative w-full mb-4 group/preview">
                                 <div className="absolute top-2 right-2 z-10">
                                     <button 
                                         onClick={() => {
-                                            setSelectedImage(null);
+                                            setSelectedMedia(null);
                                             if(fileInputRef.current) fileInputRef.current.value = '';
                                         }}
                                         className="p-1 bg-black/50 rounded-full text-white hover:bg-red-500 transition-colors"
@@ -344,7 +417,11 @@ export const Feed: React.FC<FeedProps> = ({ onUserClick }) => {
                                         <X size={14} />
                                     </button>
                                 </div>
-                                <img src={selectedImage} alt="Preview" className="w-full h-48 object-cover rounded-lg border border-zinc-800" />
+                                {isVideoFile(selectedMedia) ? (
+                                    <video src={selectedMedia} controls className="w-full h-48 object-cover rounded-lg border border-zinc-800" />
+                                ) : (
+                                    <img src={selectedMedia} alt="Preview" className="w-full h-48 object-cover rounded-lg border border-zinc-800" />
+                                )}
                             </div>
                         )}
 
@@ -353,7 +430,7 @@ export const Feed: React.FC<FeedProps> = ({ onUserClick }) => {
                                 <span className="text-[10px] text-zinc-600 font-mono uppercase tracking-wider hidden md:inline">
                                     Public Transmission
                                 </span>
-                                {/* Image Upload Button */}
+                                {/* Media Upload Button */}
                                 <button 
                                     onClick={() => fileInputRef.current?.click()}
                                     className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-800/50 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors text-xs font-mono"
@@ -364,15 +441,15 @@ export const Feed: React.FC<FeedProps> = ({ onUserClick }) => {
                                 <input 
                                     type="file" 
                                     ref={fileInputRef} 
-                                    onChange={handleImageSelect} 
-                                    accept="image/*" 
+                                    onChange={handleMediaSelect} 
+                                    accept="image/*,video/*" // ✅ Added video support
                                     className="hidden" 
                                 />
                             </div>
 
                             <button
                                 onClick={handleCreatePost}
-                                disabled={(!newPostContent.trim() && !selectedImage) || isPosting}
+                                disabled={(!newPostContent.trim() && !selectedMedia) || isPosting}
                                 className="flex items-center gap-2 bg-white text-black px-4 py-1.5 rounded-full text-xs font-bold hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {isPosting ? 'SENDING...' : 'BROADCAST'} <Send size={12} />
