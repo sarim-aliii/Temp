@@ -24,6 +24,7 @@ import postRoutes from './routes/posts';
 import aiRoutes from './routes/ai';
 import notificationRoutes from './routes/notifications';
 import adminRoutes from './routes/admin';
+import feedbackRoutes from './routes/feedback';
 
 
 // --- Connect to Database ---
@@ -99,6 +100,7 @@ app.use('/api/posts', postRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/feedback', feedbackRoutes);
 
 
 // --- Initialize Sockets ---

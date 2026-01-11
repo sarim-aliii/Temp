@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import User from '../models/User';
 import Waitlist from '../models/Waitlist';
+import { approveWaitlistUser } from '../controllers/waitlistController';
 import { requireAdmin } from '../middleware/adminMiddleware';
+import { getAllFeedback } from '../controllers/feedbackController';
+
 
 const router = Router();
 
-
 // GET /api/admin/users - Fetch all registered users
-// Use 'requireAdmin' instead of 'verifyAdmin'
 router.get('/users', requireAdmin, async (req, res) => {
   try {
     const users = await User.find()
@@ -35,7 +36,7 @@ router.get('/stats', requireAdmin, async (req, res) => {
   try {
     const totalUsers = await User.countDocuments();
     const premiumUsers = await User.countDocuments({ isPremium: true });
-    const waitlistCount = await Waitlist.countDocuments(); // Add this
+    const waitlistCount = await Waitlist.countDocuments();
     
     const revenue = premiumUsers * 4.99; 
 
@@ -50,27 +51,12 @@ router.get('/stats', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/waitlist/:id/approve', requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    // Find and update the specific entry
-    const entry = await Waitlist.findByIdAndUpdate(
-      id,
-      { approved: true },
-      { new: true } // Return the updated document
-    );
+// @route   PUT /api/admin/waitlist/:id/approve
+// @desc    Approve a user and send the email
+router.put('/waitlist/:id/approve', requireAdmin, approveWaitlistUser);
 
-    if (!entry) {
-      return res.status(404).json({ message: 'Waitlist entry not found' });
-    }
-
-    res.json({ success: true, data: entry });
-  } catch (error) {
-    console.error('Approval error:', error);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
+// GET /api/admin/feedback
+router.get('/feedback', requireAdmin, getAllFeedback);
 
 
 export default router;

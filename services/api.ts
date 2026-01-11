@@ -141,4 +141,23 @@ export const postsApi = {
   }
 };
 
+
+export const feedbackApi = {
+  submit: async (data: { type: 'bug' | 'feature' | 'other'; message: string }) => {
+    const { data: response } = await api.post<ApiResponse>('/feedback', data);
+    return response;
+  },
+};
+
+
+export const adminApi = {
+  getFeedback: async (adminKey: string) => {
+    const { data } = await api.get('/admin/feedback', {
+        headers: { 'x-admin-key': adminKey }
+    });
+    return data;
+  }
+};
+
+
 export default api;
