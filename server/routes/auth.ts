@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import passport from 'passport';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import { authMiddleware } from '../middleware/auth';
 import { 
   registerUser, 
@@ -15,16 +16,23 @@ import {
 
 const router = Router();
 
-
+// Specific limiter for login to prevent brute force
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  message: { message: "Too many login attempts, please try again after 15 minutes." }
+});
 
 router.post('/signup', registerUser);
-router.post('/login', loginUser);
+router.post('/login', loginLimiter, loginUser); // Applied here
 router.post('/verify-email', verifyEmail); 
 router.post('/resend-verification', resendVerificationEmail);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);
 router.post('/google', googleLogin);
 router.get('/me', authMiddleware, getUserProfile);
+
+// Google OAuth Routes
 router.get('/google', passport.authenticate('google', {
   scope: ['profile', 'email'],
 }));
@@ -51,7 +59,15 @@ router.get('/google/callback',
     });
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    res.redirect(`${frontendUrl}/#/auth/callback?token=${token}`);
+    
+    res.cookie('token', token, {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 5 * 60 * 1000
+    });
+
+    res.redirect(`${frontendUrl}/#/auth/callback`);
   }
 );
 

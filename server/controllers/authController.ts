@@ -3,19 +3,23 @@ import { asyncHandler } from '../utils/asyncHandler';
 import { AppError } from '../utils/AppError';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import User, { IUser } from '../models/User';
 import { firebaseAdmin } from '../config/firebaseAdmin';
 import { sendEmail } from '../utils/emailService';
-import { 
-  registerSchema, 
-  loginSchema, 
-  verifyEmailSchema, 
+import {
+  registerSchema,
+  loginSchema,
+  verifyEmailSchema,
   resendVerificationSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
   updateProfileSchema,
   googleLoginSchema
 } from '../validators';
+
+
+const DUMMY_HASH = '$2a$10$zP4.r517.1UL.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1';
 
 // Helper: Generate JWT
 const generateToken = (id: string) => {
@@ -26,7 +30,7 @@ const generateToken = (id: string) => {
 
 // Helper: Generate OTP, Save to User, and Send Email
 const generateAndSendOTP = async (
-  user: IUser, 
+  user: IUser,
   type: 'verification' | 'reset',
   subject: string,
   title: string,
@@ -43,7 +47,7 @@ const generateAndSendOTP = async (
     user.resetPasswordToken = hash;
     user.resetPasswordExpire = expires;
   }
-  
+
   await user.save();
 
   const message = `
@@ -120,33 +124,34 @@ export const registerUser = asyncHandler(async (req: Request, res: Response) => 
 // @route   POST /api/auth/login
 // @access  Public
 export const loginUser = asyncHandler(async (req: Request, res: Response) => {
-  // Validate Input
   const { email, password } = await loginSchema.parseAsync(req.body);
 
   const user = await User.findOne({ email }).select('+passHash');
+  const targetHash = user?.passHash || DUMMY_HASH;
+  const isMatch = await bcrypt.compare(password, targetHash);
 
-  if (user && user.authMethod !== 'email') {
-    throw new AppError(`This account exists but was created with ${user.authMethod}. Please use that sign-in method.`, 401);
-  }
-
-  if (user && (await user.matchPassword(password))) {
-    // Check if verified
-    if (!user.isVerified) {
-      throw new AppError('Please verify your email address before logging in.', 403);
-    }
-
-    res.json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      avatar: user.avatar,
-      token: generateToken(user.id.toString()),
-      isVerified: user.isVerified,
-      pairedWithUserId: user.pairedWithUserId
-    });
-  } else {
+  if (!user || !isMatch) {
     throw new AppError('Invalid email or password', 401);
   }
+
+  if (user.authMethod !== 'email') {
+    throw new AppError(`This account uses ${user.authMethod}. Please sign in with that method.`, 401);
+  }
+
+  // Check if verified
+  if (!user.isVerified) {
+    throw new AppError('Please verify your email address before logging in.', 403);
+  }
+
+  res.json({
+    _id: user._id,
+    name: user.name,
+    email: user.email,
+    avatar: user.avatar,
+    token: generateToken(user.id.toString()),
+    isVerified: user.isVerified,
+    pairedWithUserId: user.pairedWithUserId
+  });
 });
 
 
@@ -180,7 +185,7 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
   }
 
   user.isVerified = true;
-  user.verificationToken = undefined; 
+  user.verificationToken = undefined;
   await user.save();
 
   res.status(200).json({
@@ -378,7 +383,7 @@ const socialLoginHandler = async (req: Request, res: Response, provider: 'google
 
   } catch (error: any) {
     if (error.name === 'ZodError') throw error;
-    
+
     console.error(`${provider} Auth Error:`, error);
     if (error instanceof AppError) throw error;
     throw new AppError(`${provider} Sign-In failed. Invalid token.`, 401);
